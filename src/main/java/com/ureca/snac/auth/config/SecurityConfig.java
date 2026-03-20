@@ -32,7 +32,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 @Slf4j
 @Configuration
 @EnableWebSecurity
-@EnableConfigurationProperties(AuthCookieProperties.class)
+@EnableConfigurationProperties({AuthCookieProperties.class, OAuthRedirectProperties.class})
 @RequiredArgsConstructor
 public class SecurityConfig {
 

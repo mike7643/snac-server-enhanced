@@ -1,6 +1,6 @@
 package com.ureca.snac.auth.oauth2;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ureca.snac.auth.config.OAuthRedirectProperties;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -19,17 +19,17 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class CustomOAuth2FailHandler implements AuthenticationFailureHandler {
 
-    private final ObjectMapper objectMapper;
+    private final OAuthRedirectProperties oAuthRedirectProperties;
 
     @Override
-    public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response, AuthenticationException exception) throws IOException, ServletException {
+    public void onAuthenticationFailure(HttpServletRequest request, HttpServletResponse response, AuthenticationException exception) throws IOException{
         String errorCode = "unknown_error";
         if (exception instanceof OAuth2AuthenticationException oauthEx && oauthEx.getError() != null) {
             errorCode = oauthEx.getError().getErrorCode();
         }
 
         log.info("errorCode={}", errorCode);
-        String redirectUrl = UriComponentsBuilder.fromUriString("https://snac-app.com/certification")
+        String redirectUrl = UriComponentsBuilder.fromUriString(oAuthRedirectProperties.getRedirectUri())
                 .queryParam("error", errorCode)
                 .build().toUriString();
 
