@@ -2,8 +2,6 @@ package com.ureca.snac.auth.service;
 
 import com.ureca.snac.auth.dto.TokenDto;
 import com.ureca.snac.auth.exception.SocialLoginException;
-import com.ureca.snac.auth.refresh.Refresh;
-import com.ureca.snac.auth.repository.RefreshRepository;
 import com.ureca.snac.auth.util.JWTUtil;
 import com.ureca.snac.common.BaseCode;
 import com.ureca.snac.member.entity.Member;
@@ -22,7 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SocialLoginServiceImpl implements SocialLoginService {
 
     private final JWTUtil jwtUtil;
-    private final RefreshRepository refreshRepository;
+    private final TokenIssuer tokenIssuer;
     private final SocialLinkRepository socialLinkRepository;
 
     @Override
@@ -72,12 +70,7 @@ public class SocialLoginServiceImpl implements SocialLoginService {
         String role = jwtUtil.getRole(socialToken);
         log.info("소셜 로그인 검증 완료: email={}, role={}", username, role);
 
-        String newAccess = jwtUtil.createAccessToken(username, role);
-        String newRefresh = jwtUtil.createRefreshToken(username, role);
-
-        refreshRepository.save(new Refresh(username, newRefresh));
-
         log.info("토큰 재발급 완료: email={}", username);
-        return new TokenDto(newAccess, newRefresh);
+        return tokenIssuer.issue(username, role);
     }
 }
