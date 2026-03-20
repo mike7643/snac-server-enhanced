@@ -2,8 +2,8 @@ package com.ureca.snac.auth.controller;
 
 import com.ureca.snac.auth.dto.TokenDto;
 import com.ureca.snac.auth.exception.SocialLoginException;
+import com.ureca.snac.auth.service.AuthCookieService;
 import com.ureca.snac.auth.service.SocialLoginService;
-import com.ureca.snac.auth.util.CookieUtil;
 import com.ureca.snac.common.ApiResponse;
 import com.ureca.snac.common.BaseCode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,7 +21,18 @@ import org.springframework.web.bind.annotation.RestController;
 public class SocialLoginController implements SocialLoginControllerSwagger {
 
     private final SocialLoginService socialLoginService;
+    private final AuthCookieService authCookieService;
 
+    /**
+     * Handle social login by exchanging the incoming social access token for application tokens
+     * and attaching them to the HTTP response.
+     *
+     * @param request  the incoming HTTP request; must include an `Authorization` header with the
+     *                 value `Bearer <social-token>` containing the social provider's access token
+     * @param response the HTTP response which will be modified to include an `Authorization`
+     *                 header with `Bearer <accessToken>` and a refresh-token cookie
+     * @return         a 200 OK ResponseEntity wrapping an ApiResponse with `BaseCode.OAUTH_LOGIN_SUCCESS`
+     */
     @Override
     @PostMapping("/social-login")
     public ResponseEntity<ApiResponse<Void>> socialLogin(HttpServletRequest request, HttpServletResponse response) {
@@ -30,7 +41,7 @@ public class SocialLoginController implements SocialLoginControllerSwagger {
         TokenDto tokenDto = socialLoginService.socialLogin(socialToken);
 
         response.setHeader(HttpHeaders.AUTHORIZATION, "Bearer " + tokenDto.getAccessToken());
-        response.addCookie(CookieUtil.createCookie("refresh", tokenDto.getRefreshToken()));
+        response.addCookie(authCookieService.createRefreshCookie(tokenDto.getRefreshToken()));
 
         return ResponseEntity.ok(ApiResponse.ok(BaseCode.OAUTH_LOGIN_SUCCESS));
     }

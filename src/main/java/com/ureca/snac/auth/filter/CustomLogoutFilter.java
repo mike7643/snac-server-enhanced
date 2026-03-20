@@ -2,6 +2,7 @@ package com.ureca.snac.auth.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ureca.snac.auth.repository.RefreshRepository;
+import com.ureca.snac.auth.service.AuthCookieService;
 import com.ureca.snac.auth.util.JWTUtil;
 import com.ureca.snac.common.ApiResponse;
 import com.ureca.snac.common.BaseCode;
@@ -10,30 +11,51 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.filter.GenericFilterBean;
 
 import java.io.IOException;
 
+@RequiredArgsConstructor
 public class CustomLogoutFilter extends GenericFilterBean {
 
     private final JWTUtil jwtUtil;
     private final RefreshRepository refreshRepository;
+    private final AuthCookieService authCookieService;
     private final ObjectMapper objectMapper;
 
-    public CustomLogoutFilter(JWTUtil jwtUtil, RefreshRepository refreshRepository, ObjectMapper objectMapper) {
-        this.jwtUtil = jwtUtil;
-        this.refreshRepository = refreshRepository;
-        this.objectMapper = objectMapper;
-    }
-
+    /**
+     * Forwards the generic servlet request and response to the HTTP-specific overload of `doFilter`.
+     *
+     * @param request the incoming ServletRequest forwarded as an HttpServletRequest
+     * @param response the outgoing ServletResponse forwarded as an HttpServletResponse
+     * @param chain the filter chain to continue processing
+     * @throws IOException if an I/O error occurs during filtering
+     * @throws ServletException if a servlet error occurs during filtering
+     */
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
         doFilter((HttpServletRequest) request, (HttpServletResponse) response, chain);
     }
 
+    /**
+     * Handles logout requests sent to POST /api/logout by validating the refresh token,
+     * removing it from persistence if present, expiring the refresh cookie, and writing
+     * a JSON logout success or error response.
+     *
+     * <p>The method short-circuits and delegates to the filter chain for non-/api/logout
+     * paths or non-POST methods. For logout requests it validates that a refresh token
+     * is present, not expired, and categorized as a refresh token; on validation failure
+     * it sends an appropriate error response and returns immediately.</p>
+     *
+     * @param request the incoming HTTP request
+     * @param response the HTTP response to be written to
+     * @param filterChain the filter chain to delegate to for non-logout requests
+     * @throws IOException if an I/O error occurs while writing the response
+     * @throws ServletException if the filter chain processing throws a servlet error
+     */
     private void doFilter(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws IOException, ServletException {
 
         String requestUri = request.getRequestURI();
@@ -47,16 +69,7 @@ public class CustomLogoutFilter extends GenericFilterBean {
             return;
         }
 
-        String refresh = null;
-        Cookie[] cookies = request.getCookies();
-        if (cookies != null) {
-            for (Cookie cookie : cookies) {
-                if (cookie.getName().equals("refresh")) {
-                    refresh = cookie.getValue();
-                    break;
-                }
-            }
-        }
+        String refresh = authCookieService.extractRefreshToken(request);
 
         // 널 체크
         if (refresh == null) {
@@ -82,13 +95,7 @@ public class CustomLogoutFilter extends GenericFilterBean {
         refreshRepository.findByRefresh(refresh).ifPresent(refreshRepository::delete);
 
 
-        Cookie cookie = new Cookie("refresh", null);
-        cookie.setMaxAge(0);
-        cookie.setPath("/");
-        cookie.setHttpOnly(true);
-//        cookie.setSecure(true);
-        cookie.setDomain("snac-app.com");
-        response.addCookie(cookie);
+        response.addCookie(authCookieService.expireRefreshCookie());
 
 
         response.setStatus(HttpServletResponse.SC_OK);
@@ -99,6 +106,16 @@ public class CustomLogoutFilter extends GenericFilterBean {
         response.getWriter().flush();
     }
 
+    /**
+     * Write a JSON error response based on the given BaseCode.
+     *
+     * Sets the HTTP status and content type, serializes ApiResponse.error(baseCode),
+     * and writes it to the response writer.
+     *
+     * @param response the HttpServletResponse to populate
+     * @param baseCode the error code and associated HTTP status used to build the response body
+     * @throws IOException if an I/O error occurs while writing the response
+     */
     private void sendErrorResponse(HttpServletResponse response, BaseCode baseCode) throws IOException {
         response.setStatus(baseCode.getStatus().value());
         response.setContentType("application/json; charset=UTF-8");

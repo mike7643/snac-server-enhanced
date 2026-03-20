@@ -1,5 +1,6 @@
 package com.ureca.snac.auth.oauth2;
 
+import com.ureca.snac.auth.config.OAuthRedirectProperties;
 import com.ureca.snac.auth.dto.CustomOAuth2User;
 import com.ureca.snac.auth.util.JWTUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,7 +21,19 @@ import java.io.IOException;
 public class CustomOAuth2SuccessHandler implements AuthenticationSuccessHandler {
 
     private final JWTUtil jwtUtil;
+    private final OAuthRedirectProperties oAuthRedirectProperties;
 
+    /**
+     * Handle a successful OAuth2 authentication by generating a social JWT for the authenticated user
+     * and redirecting the client to the configured OAuth redirect URI with the token as the `social` query parameter.
+     *
+     * Extracts provider, providerId, email, and authority from the authenticated principal to create the token.
+     *
+     * @param request        the HTTP request that triggered authentication
+     * @param response       the HTTP response used to send the redirect
+     * @param authentication the Spring Security authentication containing the authenticated OAuth2 principal
+     * @throws IOException if sending the redirect fails
+     */
     @Override
     @Transactional
     public void onAuthenticationSuccess(HttpServletRequest request,
@@ -49,7 +62,7 @@ public class CustomOAuth2SuccessHandler implements AuthenticationSuccessHandler 
         log.debug("socialToken 생성 완료: {}", socialToken);
 
         log.info("리다이렉트 URL 생성 및 토큰 추가");
-        String redirectUrl = UriComponentsBuilder.fromUriString("https://snac-app.com/certification")
+        String redirectUrl = UriComponentsBuilder.fromUriString(oAuthRedirectProperties.getRedirectUri())
                 .queryParam("social", socialToken)
                 .build().toUriString();
 

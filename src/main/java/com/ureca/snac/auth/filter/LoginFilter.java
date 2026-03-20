@@ -3,8 +3,8 @@ package com.ureca.snac.auth.filter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ureca.snac.auth.dto.TokenDto;
 import com.ureca.snac.auth.dto.request.LoginRequest;
+import com.ureca.snac.auth.service.AuthCookieService;
 import com.ureca.snac.auth.service.TokenIssuer;
-import com.ureca.snac.auth.util.CookieUtil;
 import com.ureca.snac.common.ApiResponse;
 import com.ureca.snac.common.BaseCode;
 import jakarta.servlet.FilterChain;
@@ -26,19 +26,34 @@ public class LoginFilter extends UsernamePasswordAuthenticationFilter {
 
     private final AuthenticationManager authenticationManager;
     private final TokenIssuer tokenIssuer;
+    private final AuthCookieService authCookieService;
     private final ObjectMapper objectMapper;
 
-    public LoginFilter(AuthenticationManager authenticationManager, TokenIssuer tokenIssuer, ObjectMapper objectMapper) {
+    /**
+     * Constructs a LoginFilter configured to handle authentication requests at "/api/login" using the supplied services.
+     */
+    public LoginFilter(AuthenticationManager authenticationManager,
+                       TokenIssuer tokenIssuer,
+                       AuthCookieService authCookieService,
+                       ObjectMapper objectMapper) {
         this.authenticationManager = authenticationManager;
         this.tokenIssuer = tokenIssuer;
+        this.authCookieService = authCookieService;
         this.objectMapper = objectMapper;
 
         setFilterProcessesUrl("/api/login");
     }
 
+    /**
+     * Authenticate credentials parsed from the request body and return the resulting Authentication.
+     *
+     * @param request  HTTP request whose JSON body is parsed as a LoginRequest to extract email and password
+     * @param response HTTP response (not used by this method)
+     * @return the Authentication produced by the AuthenticationManager for the provided credentials
+     * @throws AuthenticationException if authentication fails
+     */
     @Override
     public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
-        // JSON 파싱해야됨.. 필터 단이라서 @RequestBody 없음
 
         LoginRequest loginRequest;
         try {
@@ -55,6 +70,15 @@ public class LoginFilter extends UsernamePasswordAuthenticationFilter {
         return authenticationManager.authenticate(authToken);
     }
 
+    /**
+     * Handle a successful authentication by issuing access and refresh tokens and returning a JSON success response.
+     *
+     * @param request the HTTP request that initiated authentication
+     * @param response the HTTP response used to set headers, cookies, status, and body
+     * @param chain the filter chain (not used by this implementation)
+     * @param authentication the authenticated principal and its authorities
+     * @throws IOException if writing the JSON response fails
+     */
     @Override
     protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Authentication authentication) throws IOException {
         String username = authentication.getName();
@@ -67,7 +91,7 @@ public class LoginFilter extends UsernamePasswordAuthenticationFilter {
         TokenDto tokenDto = tokenIssuer.issue(username, role);
 
         response.setHeader(HttpHeaders.AUTHORIZATION,"Bearer "+ tokenDto.getAccessToken());
-        response.addCookie(CookieUtil.createCookie("refresh", tokenDto.getRefreshToken()));
+        response.addCookie(authCookieService.createRefreshCookie(tokenDto.getRefreshToken()));
 
         response.setStatus(HttpServletResponse.SC_OK);
         response.setContentType("application/json; charset=UTF-8");
