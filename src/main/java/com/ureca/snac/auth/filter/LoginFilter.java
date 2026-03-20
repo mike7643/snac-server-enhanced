@@ -1,18 +1,16 @@
 package com.ureca.snac.auth.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ureca.snac.auth.dto.TokenDto;
 import com.ureca.snac.auth.dto.request.LoginRequest;
-import com.ureca.snac.auth.refresh.Refresh;
-import com.ureca.snac.auth.repository.RefreshRepository;
+import com.ureca.snac.auth.service.TokenIssuer;
 import com.ureca.snac.auth.util.CookieUtil;
-import com.ureca.snac.auth.util.JWTUtil;
 import com.ureca.snac.common.ApiResponse;
 import com.ureca.snac.common.BaseCode;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -27,15 +25,13 @@ import java.util.Iterator;
 public class LoginFilter extends UsernamePasswordAuthenticationFilter {
 
     private final AuthenticationManager authenticationManager;
-    private final JWTUtil jwtUtil;
+    private final TokenIssuer tokenIssuer;
     private final ObjectMapper objectMapper;
-    private final RefreshRepository refreshRepository;
 
-    public LoginFilter(AuthenticationManager authenticationManager, JWTUtil jwtUtil, ObjectMapper objectMapper, RefreshRepository refreshRepository) {
+    public LoginFilter(AuthenticationManager authenticationManager, TokenIssuer tokenIssuer, ObjectMapper objectMapper) {
         this.authenticationManager = authenticationManager;
-        this.jwtUtil = jwtUtil;
+        this.tokenIssuer = tokenIssuer;
         this.objectMapper = objectMapper;
-        this.refreshRepository = refreshRepository;
 
         setFilterProcessesUrl("/api/login");
     }
@@ -68,14 +64,10 @@ public class LoginFilter extends UsernamePasswordAuthenticationFilter {
         GrantedAuthority auth = iter.next();
         String role = auth.getAuthority();
 
-        //토큰 생성
-        String access = jwtUtil.createAccessToken(username, role);
-        String refresh = jwtUtil.createRefreshToken(username, role);
+        TokenDto tokenDto = tokenIssuer.issue(username, role);
 
-        refreshRepository.save(new Refresh(username, refresh));
-
-        response.setHeader(HttpHeaders.AUTHORIZATION,"Bearer "+ access);
-        response.addCookie(CookieUtil.createCookie("refresh", refresh));
+        response.setHeader(HttpHeaders.AUTHORIZATION,"Bearer "+ tokenDto.getAccessToken());
+        response.addCookie(CookieUtil.createCookie("refresh", tokenDto.getRefreshToken()));
 
         response.setStatus(HttpServletResponse.SC_OK);
         response.setContentType("application/json; charset=UTF-8");

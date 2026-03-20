@@ -2,8 +2,8 @@ package com.ureca.snac.auth.service;
 
 import com.ureca.snac.auth.dto.TokenDto;
 import com.ureca.snac.auth.exception.RefreshTokenException;
-import com.ureca.snac.auth.util.JWTUtil;
 import com.ureca.snac.auth.refresh.Refresh;
+import com.ureca.snac.auth.util.JWTUtil;
 import com.ureca.snac.auth.repository.RefreshRepository;
 import com.ureca.snac.common.BaseCode;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -16,6 +16,7 @@ public class ReissueServiceImpl implements ReissueService {
 
     private final JWTUtil jwtUtil;
     private final RefreshRepository refreshRepository;
+    private final TokenIssuer tokenIssuer;
 
     @Override
     public TokenDto reissue(String refresh) {
@@ -49,14 +50,8 @@ public class ReissueServiceImpl implements ReissueService {
         }
         String role = jwtUtil.getRole(refresh);
 
-        String newAccess = jwtUtil.createAccessToken(username, role);
-        String newRefresh = jwtUtil.createRefreshToken(username, role);
-
-
-        // 5. 기존 리프레시 토큰 레디스에서 삭제, 새 거 저장 => 생각해보니까 굳이 삭제 할 필요가 없고 덮어씌우면 되어서 코드 변경
-        refreshRepository.save(new Refresh(username, newRefresh));
-
-        return new TokenDto(newAccess, newRefresh);
+        // 5. 새 access/refresh 발급 + refresh 저장
+        return tokenIssuer.issue(username, role);
     }
 
 }

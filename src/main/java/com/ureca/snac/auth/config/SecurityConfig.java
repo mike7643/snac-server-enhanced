@@ -9,6 +9,7 @@ import com.ureca.snac.auth.oauth2.CustomOAuth2FailHandler;
 import com.ureca.snac.auth.oauth2.CustomOAuth2SuccessHandler;
 import com.ureca.snac.auth.repository.RefreshRepository;
 import com.ureca.snac.auth.service.CustomOAuth2UserService;
+import com.ureca.snac.auth.service.TokenIssuer;
 import com.ureca.snac.auth.util.JWTUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -53,7 +54,8 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http,
                                            RefreshRepository refreshRepository,
                                            CorsConfigurationSource corsConfigurationSource,
-                                           AuthenticationManager authenticationManager) throws Exception {
+                                           AuthenticationManager authenticationManager,
+                                           TokenIssuer tokenIssuer) throws Exception {
 
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
@@ -74,7 +76,7 @@ public class SecurityConfig {
 
         http
                 .addFilterBefore(jwtFilter(), OAuth2AuthorizationRequestRedirectFilter.class)
-                .addFilterAt(loginFilter(authenticationManager, refreshRepository), UsernamePasswordAuthenticationFilter.class)
+                .addFilterAt(loginFilter(authenticationManager, tokenIssuer), UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(new CustomLogoutFilter(jwtUtil, refreshRepository, objectMapper), LogoutFilter.class);
 
         return http.build();
@@ -85,7 +87,7 @@ public class SecurityConfig {
         return new JWTFilter(objectMapper, jwtUtil);
     }
 
-    private LoginFilter loginFilter(AuthenticationManager authenticationManager, RefreshRepository refreshRepository) {
-        return new LoginFilter(authenticationManager, jwtUtil, objectMapper, refreshRepository);
+    private LoginFilter loginFilter(AuthenticationManager authenticationManager, TokenIssuer tokenIssuer) {
+        return new LoginFilter(authenticationManager, tokenIssuer, objectMapper);
     }
 }
