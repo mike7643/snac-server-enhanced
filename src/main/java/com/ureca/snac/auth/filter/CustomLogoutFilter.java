@@ -2,6 +2,7 @@ package com.ureca.snac.auth.filter;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ureca.snac.auth.repository.RefreshRepository;
+import com.ureca.snac.auth.service.AuthCookieService;
 import com.ureca.snac.auth.util.JWTUtil;
 import com.ureca.snac.common.ApiResponse;
 import com.ureca.snac.common.BaseCode;
@@ -10,24 +11,20 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
 import jakarta.servlet.ServletResponse;
-import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.filter.GenericFilterBean;
 
 import java.io.IOException;
 
+@RequiredArgsConstructor
 public class CustomLogoutFilter extends GenericFilterBean {
 
     private final JWTUtil jwtUtil;
     private final RefreshRepository refreshRepository;
+    private final AuthCookieService authCookieService;
     private final ObjectMapper objectMapper;
-
-    public CustomLogoutFilter(JWTUtil jwtUtil, RefreshRepository refreshRepository, ObjectMapper objectMapper) {
-        this.jwtUtil = jwtUtil;
-        this.refreshRepository = refreshRepository;
-        this.objectMapper = objectMapper;
-    }
 
     @Override
     public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
@@ -47,16 +44,7 @@ public class CustomLogoutFilter extends GenericFilterBean {
             return;
         }
 
-        String refresh = null;
-        Cookie[] cookies = request.getCookies();
-        if (cookies != null) {
-            for (Cookie cookie : cookies) {
-                if (cookie.getName().equals("refresh")) {
-                    refresh = cookie.getValue();
-                    break;
-                }
-            }
-        }
+        String refresh = authCookieService.extractRefreshToken(request);
 
         // 널 체크
         if (refresh == null) {
@@ -82,13 +70,7 @@ public class CustomLogoutFilter extends GenericFilterBean {
         refreshRepository.findByRefresh(refresh).ifPresent(refreshRepository::delete);
 
 
-        Cookie cookie = new Cookie("refresh", null);
-        cookie.setMaxAge(0);
-        cookie.setPath("/");
-        cookie.setHttpOnly(true);
-//        cookie.setSecure(true);
-        cookie.setDomain("snac-app.com");
-        response.addCookie(cookie);
+        response.addCookie(authCookieService.expireRefreshCookie());
 
 
         response.setStatus(HttpServletResponse.SC_OK);

@@ -2,8 +2,8 @@ package com.ureca.snac.auth.controller;
 
 import com.ureca.snac.auth.dto.TokenDto;
 import com.ureca.snac.auth.exception.SocialLoginException;
+import com.ureca.snac.auth.service.AuthCookieService;
 import com.ureca.snac.auth.service.SocialLoginService;
-import com.ureca.snac.auth.util.CookieUtil;
 import com.ureca.snac.common.ApiResponse;
 import com.ureca.snac.common.BaseCode;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SocialLoginController implements SocialLoginControllerSwagger {
 
     private final SocialLoginService socialLoginService;
+    private final AuthCookieService authCookieService;
 
     @Override
     @PostMapping("/social-login")
@@ -30,7 +31,7 @@ public class SocialLoginController implements SocialLoginControllerSwagger {
         TokenDto tokenDto = socialLoginService.socialLogin(socialToken);
 
         response.setHeader(HttpHeaders.AUTHORIZATION, "Bearer " + tokenDto.getAccessToken());
-        response.addCookie(CookieUtil.createCookie("refresh", tokenDto.getRefreshToken()));
+        response.addCookie(authCookieService.createRefreshCookie(tokenDto.getRefreshToken()));
 
         return ResponseEntity.ok(ApiResponse.ok(BaseCode.OAUTH_LOGIN_SUCCESS));
     }

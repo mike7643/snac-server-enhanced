@@ -1,5 +1,6 @@
 package com.ureca.snac.auth.oauth2;
 
+import com.ureca.snac.auth.config.OAuthRedirectProperties;
 import com.ureca.snac.auth.dto.CustomOAuth2User;
 import com.ureca.snac.auth.util.JWTUtil;
 import jakarta.servlet.http.HttpServletRequest;
@@ -20,6 +21,7 @@ import java.io.IOException;
 public class CustomOAuth2SuccessHandler implements AuthenticationSuccessHandler {
 
     private final JWTUtil jwtUtil;
+    private final OAuthRedirectProperties oAuthRedirectProperties;
 
     @Override
     @Transactional
@@ -49,7 +51,7 @@ public class CustomOAuth2SuccessHandler implements AuthenticationSuccessHandler 
         log.debug("socialToken 생성 완료: {}", socialToken);
 
         log.info("리다이렉트 URL 생성 및 토큰 추가");
-        String redirectUrl = UriComponentsBuilder.fromUriString("https://snac-app.com/certification")
+        String redirectUrl = UriComponentsBuilder.fromUriString(oAuthRedirectProperties.getRedirectUri())
                 .queryParam("social", socialToken)
                 .build().toUriString();
 

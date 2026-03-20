@@ -160,6 +160,17 @@ cors:
 kakao:
   admin-key: ${KAKAO_ADMIN_KEY}
 
+auth:
+  oauth:
+    redirect-uri: https://snac-app.com/certification
+  cookie:
+    cookie-name: refresh
+    domain: snac-app.com
+    path: /
+    max-age-seconds: 86400
+    secure: false
+    http-only: true
+
 
 # Swagger UI (springdoc) 설정
 springdoc:

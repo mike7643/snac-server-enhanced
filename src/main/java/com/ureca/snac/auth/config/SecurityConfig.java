@@ -8,10 +8,12 @@ import com.ureca.snac.auth.oauth2.CustomAuthorizationRequestResolver;
 import com.ureca.snac.auth.oauth2.CustomOAuth2FailHandler;
 import com.ureca.snac.auth.oauth2.CustomOAuth2SuccessHandler;
 import com.ureca.snac.auth.repository.RefreshRepository;
+import com.ureca.snac.auth.service.AuthCookieService;
 import com.ureca.snac.auth.service.CustomOAuth2UserService;
 import com.ureca.snac.auth.service.TokenIssuer;
 import com.ureca.snac.auth.util.JWTUtil;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -30,6 +32,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 @Slf4j
 @Configuration
 @EnableWebSecurity
+@EnableConfigurationProperties({AuthCookieProperties.class, OAuthRedirectProperties.class})
 @RequiredArgsConstructor
 public class SecurityConfig {
 
@@ -55,7 +58,8 @@ public class SecurityConfig {
                                            RefreshRepository refreshRepository,
                                            CorsConfigurationSource corsConfigurationSource,
                                            AuthenticationManager authenticationManager,
-                                           TokenIssuer tokenIssuer) throws Exception {
+                                           TokenIssuer tokenIssuer,
+                                           AuthCookieService authCookieService) throws Exception {
 
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
@@ -76,8 +80,8 @@ public class SecurityConfig {
 
         http
                 .addFilterBefore(jwtFilter(), OAuth2AuthorizationRequestRedirectFilter.class)
-                .addFilterAt(loginFilter(authenticationManager, tokenIssuer), UsernamePasswordAuthenticationFilter.class)
-                .addFilterBefore(new CustomLogoutFilter(jwtUtil, refreshRepository, objectMapper), LogoutFilter.class);
+                .addFilterAt(loginFilter(authenticationManager, tokenIssuer, authCookieService), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new CustomLogoutFilter(jwtUtil, refreshRepository, authCookieService, objectMapper), LogoutFilter.class);
 
         return http.build();
 
@@ -87,7 +91,9 @@ public class SecurityConfig {
         return new JWTFilter(objectMapper, jwtUtil);
     }
 
-    private LoginFilter loginFilter(AuthenticationManager authenticationManager, TokenIssuer tokenIssuer) {
-        return new LoginFilter(authenticationManager, tokenIssuer, objectMapper);
+    private LoginFilter loginFilter(AuthenticationManager authenticationManager,
+                                    TokenIssuer tokenIssuer,
+                                    AuthCookieService authCookieService) {
+        return new LoginFilter(authenticationManager, tokenIssuer, authCookieService, objectMapper);
     }
 }
