@@ -14,15 +14,21 @@ import java.time.Duration;
 public class SocialOAuthTokenStore {
 
     private final StringRedisTemplate stringRedisTemplate;
+    private final SocialOAuthRedisKeyFactory keyFactory;
 
     public void saveAccessToken(SocialProvider provider, String providerId, String accessToken, Duration ttl) {
-        // provider + providerId 조합 키로 저장해 unlink 시 정확한 토큰을 조회할 수 있게 한다.
-        String redisKey = buildKey(provider, providerId);
+        String redisKey = keyFactory.accessTokenKey(provider, providerId);
         stringRedisTemplate.opsForValue().set(redisKey, accessToken, ttl);
         log.info("소셜 계정에서 내려준 AccessToken Redis 저장: {} = {}", redisKey, accessToken);
     }
 
-    private String buildKey(SocialProvider provider, String providerId) {
-        return provider + ":" + providerId;
+    public String getAccessToken(SocialProvider provider, String providerId) {
+        String redisKey = keyFactory.accessTokenKey(provider, providerId);
+        return stringRedisTemplate.opsForValue().get(redisKey);
+    }
+
+    public void deleteAccessToken(SocialProvider provider, String providerId) {
+        String redisKey = keyFactory.accessTokenKey(provider, providerId);
+        stringRedisTemplate.delete(redisKey);
     }
 }
