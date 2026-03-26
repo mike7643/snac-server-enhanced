@@ -3,6 +3,7 @@ package com.ureca.snac.auth.service.unlink;
 import com.ureca.snac.auth.exception.SocialUnlinkApiException;
 import com.ureca.snac.auth.exception.SocialUnlinkFailedException;
 import com.ureca.snac.auth.repository.AuthRepository;
+import com.ureca.snac.auth.service.oauth2.SocialOAuthTokenStore;
 import com.ureca.snac.common.BaseCode;
 import com.ureca.snac.member.entity.Member;
 import com.ureca.snac.auth.oauth2.SocialProvider;
@@ -11,7 +12,6 @@ import com.ureca.snac.member.exception.MemberNotFoundException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
@@ -26,17 +26,17 @@ public class GoogleUnlinkServiceImpl implements SocialUnlinkService<Void> {
 
     private final AuthRepository authRepository;
     private final RestClient restClient;
-    private final StringRedisTemplate stringRedisTemplate;
+    private final SocialOAuthTokenStore socialOAuthTokenStore;
 
     @Autowired
     public GoogleUnlinkServiceImpl(RestClient.Builder restClientBuilder,
                                    AuthRepository authRepository,
-                                   StringRedisTemplate stringRedisTemplate) {
+                                   SocialOAuthTokenStore socialOAuthTokenStore) {
         this.restClient = restClientBuilder
                 .baseUrl("https://oauth2.googleapis.com")
                 .build();
         this.authRepository = authRepository;
-        this.stringRedisTemplate = stringRedisTemplate;
+        this.socialOAuthTokenStore = socialOAuthTokenStore;
     }
 
     @Override
@@ -57,8 +57,7 @@ public class GoogleUnlinkServiceImpl implements SocialUnlinkService<Void> {
         String providerId = socialLink.get().getProviderId();
         log.info("providerId: {}", providerId);
 
-        String redisKey = "GOOGLE:" + providerId;
-        String googleToken = stringRedisTemplate.opsForValue().get(redisKey);
+        String googleToken = socialOAuthTokenStore.getAccessToken(getProvider(), providerId);
         if (googleToken == null) {
             throw new SocialUnlinkFailedException(BaseCode.GOOGLE_TOKEN_NOT_FOUND);
         }
@@ -82,7 +81,7 @@ public class GoogleUnlinkServiceImpl implements SocialUnlinkService<Void> {
         }
 
         member.removeSocialLink(getProvider());
-        stringRedisTemplate.delete(redisKey);
+        socialOAuthTokenStore.deleteAccessToken(getProvider(), providerId);
         log.info("구글 연동 해제 완료: {}", email);
         return null;
     }

@@ -4,6 +4,7 @@ import com.ureca.snac.auth.dto.response.NaverUnlinkResponse;
 import com.ureca.snac.auth.exception.SocialUnlinkApiException;
 import com.ureca.snac.auth.exception.SocialUnlinkFailedException;
 import com.ureca.snac.auth.repository.AuthRepository;
+import com.ureca.snac.auth.service.oauth2.SocialOAuthTokenStore;
 import com.ureca.snac.common.BaseCode;
 import com.ureca.snac.member.entity.Member;
 import com.ureca.snac.auth.oauth2.SocialProvider;
@@ -13,7 +14,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
@@ -28,7 +28,7 @@ public class NaverUnlinkServiceImpl implements SocialUnlinkService<NaverUnlinkRe
 
     private final AuthRepository authRepository;
     private final RestClient restClient;
-    private final StringRedisTemplate stringRedisTemplate;
+    private final SocialOAuthTokenStore socialOAuthTokenStore;
 
     @Value("${spring.security.oauth2.client.registration.naver.client-id}")
     private String clientId;
@@ -39,12 +39,12 @@ public class NaverUnlinkServiceImpl implements SocialUnlinkService<NaverUnlinkRe
     @Autowired
     public NaverUnlinkServiceImpl(RestClient.Builder restClientBuilder,
                                   AuthRepository authRepository,
-                                  StringRedisTemplate stringRedisTemplate) {
+                                  SocialOAuthTokenStore socialOAuthTokenStore) {
         this.restClient = restClientBuilder
                 .baseUrl("https://nid.naver.com")
                 .build();
         this.authRepository = authRepository;
-        this.stringRedisTemplate = stringRedisTemplate;
+        this.socialOAuthTokenStore = socialOAuthTokenStore;
     }
 
     @Override
@@ -63,8 +63,7 @@ public class NaverUnlinkServiceImpl implements SocialUnlinkService<NaverUnlinkRe
         }
         String providerId = socialLink.get().getProviderId();
 
-        String redisKey = "NAVER:" + providerId;
-        String naverToken = stringRedisTemplate.opsForValue().get(redisKey);
+        String naverToken = socialOAuthTokenStore.getAccessToken(getProvider(), providerId);
         if (naverToken == null) {
             throw new SocialUnlinkFailedException(BaseCode.NAVER_TOKEN_NOT_FOUND);
         }
@@ -83,7 +82,7 @@ public class NaverUnlinkServiceImpl implements SocialUnlinkService<NaverUnlinkRe
                     .body(NaverUnlinkResponse.class);
 
             member.removeSocialLink(getProvider());
-            stringRedisTemplate.delete(redisKey);
+            socialOAuthTokenStore.deleteAccessToken(getProvider(), providerId);
             log.info("네이버 연동 해제 완료: {}", email);
 
             return response;
