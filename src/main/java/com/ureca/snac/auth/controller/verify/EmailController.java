@@ -24,8 +24,6 @@ public class EmailController implements EmailControllerSwagger {
     @Override
     public ResponseEntity<ApiResponse<Void>> sendVerificationCode(@Valid @RequestBody EmailRequest dto) {
         rabbitTemplate.convertAndSend(RabbitMQConfig.EMAIL_EXCHANGE, RabbitMQConfig.EMAIL_ROUTING_KEY, dto.getEmail());
-
-//        emailService.sendVerificationCode(dto.getEmail()); // rabbitMQ로 비동기 처리 함
         return ResponseEntity.ok(ApiResponse.ok(EMAIL_VERIFICATION_SENT));
     }
 
