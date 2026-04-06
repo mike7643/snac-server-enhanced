@@ -92,6 +92,7 @@ public enum BaseCode {
     // 문자 인증코드 인증- 예외
     SMS_CODE_VERIFICATION_EXPIRED("SMS_CODE_VERIFICATION_EXPIRED_401", HttpStatus.UNAUTHORIZED, "문자 인증번호가 만료되었거나 존재하지 않습니다."),
     SMS_CODE_VERIFICATION_MISMATCH("SMS_CODE_VERIFICATION_MISMATCH_401", HttpStatus.UNAUTHORIZED, "문자 인증번호가 일치하지 않습니다."),
+    VERIFICATION_INTERNAL_ERROR("VERIFICATION_INTERNAL_ERROR_500", HttpStatus.INTERNAL_SERVER_ERROR, "인증 처리 중 내부 오류가 발생했습니다."),
 
     //이메일 인증코드 인증- 성공
     EMAIL_CODE_VERIFICATION_SUCCESS("EMAIL_CODE_VERIFICATION_SUCCESS_200", HttpStatus.OK, "Email 인증에 성공했습니다."),
