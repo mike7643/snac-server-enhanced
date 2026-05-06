@@ -3,6 +3,7 @@ package com.ureca.snac.auth.service.verify;
 import com.ureca.snac.auth.exception.VerificationFailedException;
 import com.ureca.snac.common.BaseCode;
 import com.ureca.snac.common.exception.InternalServerException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
@@ -51,7 +52,13 @@ public class VerificationCodeService {
         VerificationPolicy policy = getPolicy(channel);
         String key = codeKey(channel, target);
         // 스크립트 반환값: -1(없음), 0(불일치), 1(일치 후 삭제 완료)
-        Long result = redisTemplate.execute(CONSUME_CODE_SCRIPT, List.of(key), inputCode);
+        Long result;
+        try {
+            result = redisTemplate.execute(CONSUME_CODE_SCRIPT, List.of(key), inputCode);
+        } catch (DataAccessException e) {
+            throw new InternalServerException(BaseCode.VERIFICATION_INTERNAL_ERROR);
+        }
+
         if (result == null) {
             throw new InternalServerException(BaseCode.VERIFICATION_INTERNAL_ERROR);
         }
