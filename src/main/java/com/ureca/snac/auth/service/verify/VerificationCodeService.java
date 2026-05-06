@@ -51,10 +51,18 @@ public class VerificationCodeService {
                            BaseCode mismatchCode) {
         VerificationPolicy policy = getPolicy(channel);
         String key = codeKey(channel, target);
-        // 스크립트 반환값: -1(없음), 0(불일치), 1(일치 후 삭제 완료)
+        String verifiedKey = verifiedKey(channel, target);
+        String verifiedTtlSeconds = String.valueOf(Math.max(1, policy.verifiedFlagTtl().toSeconds())); // 초 단위 정수로 받음 ttl은
+        // 스크립트 반환값: -1(없음), 0(불일치), 1(일치+코드삭제+verified 저장 완료)
         Long result;
         try {
-            result = redisTemplate.execute(CONSUME_CODE_SCRIPT, List.of(key), inputCode);
+            result = redisTemplate.execute(
+                    CONSUME_CODE_SCRIPT,
+                    List.of(key, verifiedKey),
+                    inputCode,
+                    "true",
+                    verifiedTtlSeconds
+            );
         } catch (DataAccessException e) {
             throw new InternalServerException(BaseCode.VERIFICATION_INTERNAL_ERROR);
         }
@@ -74,9 +82,6 @@ public class VerificationCodeService {
         if (result != RESULT_MATCHED_AND_CONSUMED) {
             throw new InternalServerException(BaseCode.VERIFICATION_INTERNAL_ERROR);
         }
-
-        // 검증 성공 시에만 verified 플래그를 저장한다.
-        redisTemplate.opsForValue().set(verifiedKey(channel, target), "true", policy.verifiedFlagTtl());
     }
 
     public boolean isVerified(VerificationChannel channel, String target) {
@@ -117,6 +122,7 @@ public class VerificationCodeService {
                         + "if not v then return -1 end\n"
                         + "if v ~= ARGV[1] then return 0 end\n"
                         + "redis.call('DEL', KEYS[1])\n"
+                        + "redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])\n"
                         + "return 1"
         );
         return script;
