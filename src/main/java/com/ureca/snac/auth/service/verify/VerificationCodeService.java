@@ -15,6 +15,7 @@ import java.util.stream.Collectors;
 
 @Component
 public class VerificationCodeService {
+    private static final String VERIFIED_MARKER = "__VERIFIED__";
     private static final long RESULT_EXPIRED = -1L;
     private static final long RESULT_MISMATCH = 0L;
     private static final long RESULT_MATCHED_AND_CONSUMED = 1L;
@@ -51,16 +52,15 @@ public class VerificationCodeService {
                            BaseCode mismatchCode) {
         VerificationPolicy policy = getPolicy(channel);
         String key = codeKey(channel, target);
-        String verifiedKey = verifiedKey(channel, target);
         String verifiedTtlSeconds = String.valueOf(Math.max(1, policy.verifiedFlagTtl().toSeconds())); // 초 단위 정수로 받음 ttl은
-        // 스크립트 반환값: -1(없음), 0(불일치), 1(일치+코드삭제+verified 저장 완료)
+        // 스크립트 반환값: -1(없음), 0(불일치), 1(일치+verified 상태 전이 완료)
         Long result;
         try {
             result = redisTemplate.execute(
                     CONSUME_CODE_SCRIPT,
-                    List.of(key, verifiedKey),
+                    List.of(key),
                     inputCode,
-                    "true",
+                    VERIFIED_MARKER,
                     verifiedTtlSeconds
             );
         } catch (DataAccessException e) {
@@ -85,17 +85,13 @@ public class VerificationCodeService {
     }
 
     public boolean isVerified(VerificationChannel channel, String target) {
-        // true/false로 검증 완료 여부를 확인
-        String flag = redisTemplate.opsForValue().get(verifiedKey(channel, target));
-        return "true".equals(flag);
+        // 코드 키가 VERIFIED 마커 상태이면 검증 완료로 본다.
+        String value = redisTemplate.opsForValue().get(codeKey(channel, target));
+        return VERIFIED_MARKER.equals(value);
     }
 
     private String codeKey(VerificationChannel channel, String target) {
         return channel.keyPrefix() + ":code:" + target;
-    }
-
-    private String verifiedKey(VerificationChannel channel, String target) {
-        return channel.keyPrefix() + ":verified:" + target;
     }
 
     private VerificationPolicy getPolicy(VerificationChannel channel) {
@@ -121,8 +117,7 @@ public class VerificationCodeService {
                 "local v = redis.call('GET', KEYS[1])\n"
                         + "if not v then return -1 end\n"
                         + "if v ~= ARGV[1] then return 0 end\n"
-                        + "redis.call('DEL', KEYS[1])\n"
-                        + "redis.call('SET', KEYS[2], ARGV[2], 'EX', ARGV[3])\n"
+                        + "redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3])\n"
                         + "return 1"
         );
         return script;
