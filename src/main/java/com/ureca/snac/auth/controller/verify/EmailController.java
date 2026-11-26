@@ -4,10 +4,8 @@ import com.ureca.snac.auth.dto.request.EmailRequest;
 import com.ureca.snac.auth.dto.request.VerificationEmailRequest;
 import com.ureca.snac.auth.service.verify.EmailService;
 import com.ureca.snac.common.ApiResponse;
-import com.ureca.snac.config.RabbitMQConfig;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -19,11 +17,10 @@ import static com.ureca.snac.common.BaseCode.*;
 public class EmailController implements EmailControllerSwagger {
 
     private final EmailService emailService;
-    private final RabbitTemplate rabbitTemplate;
 
     @Override
     public ResponseEntity<ApiResponse<Void>> sendVerificationCode(@Valid @RequestBody EmailRequest dto) {
-        rabbitTemplate.convertAndSend(RabbitMQConfig.EMAIL_EXCHANGE, RabbitMQConfig.EMAIL_ROUTING_KEY, dto.getEmail());
+        emailService.sendVerificationCode(dto.getEmail());
         return ResponseEntity.ok(ApiResponse.ok(EMAIL_VERIFICATION_SENT));
     }
 
