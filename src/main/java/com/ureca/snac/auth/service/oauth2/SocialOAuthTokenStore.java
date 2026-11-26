@@ -19,7 +19,7 @@ public class SocialOAuthTokenStore {
     public void saveAccessToken(SocialProvider provider, String providerId, String accessToken, Duration ttl) {
         String redisKey = keyFactory.accessTokenKey(provider, providerId);
         stringRedisTemplate.opsForValue().set(redisKey, accessToken, ttl);
-        log.info("소셜 계정에서 내려준 AccessToken Redis 저장: {} = {}", redisKey, accessToken);
+        log.info("소셜 계정에서 내려준 AccessToken Redis 저장: {}", redisKey);
     }
 
     public String getAccessToken(SocialProvider provider, String providerId) {

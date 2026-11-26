@@ -119,9 +119,8 @@ spring:
     #15분
     refresh-expiration: 43200000
     #12시간
-    #    social-expiration: 60000
-    social-expiration: 43200000
-    #1분
+    # social 토큰은 리다이렉트 URL 로 전달되는 1회용 교환 토큰이라 짧게 유지 (5분)
+    social-expiration: 300000
 
   # RabbitMQ 설정
 
