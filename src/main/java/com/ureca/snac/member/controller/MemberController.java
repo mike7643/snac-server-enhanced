@@ -65,8 +65,8 @@ public class MemberController implements MemberControllerSwagger {
             @Valid PhoneRequest phoneRequest
     ) {
         String changePhone = phoneRequest.getPhone();
-        boolean phoneVerified = snsService.isPhoneVerified(changePhone);
-        if (!phoneVerified) {
+        // 인증 완료 상태는 한 번만 사용할 수 있다.
+        if (!snsService.consumePhoneVerification(changePhone)) {
             return ResponseEntity.ok(ApiResponse.error(BaseCode.PHONE_NOT_VERIFIED));
         }
         memberService.changePhone(userDetails.getUsername(), changePhone);
@@ -103,8 +103,7 @@ public class MemberController implements MemberControllerSwagger {
     @Override
     public ResponseEntity<ApiResponse<String>> findEmail(@Valid PhoneRequest phoneRequest) {
         String phone = phoneRequest.getPhone();
-        boolean phoneVerified = snsService.isPhoneVerified(phone);
-        if (!phoneVerified) {
+        if (!snsService.consumePhoneVerification(phone)) {
             return ResponseEntity.ok(ApiResponse.error(BaseCode.PHONE_NOT_VERIFIED));
         }
         String emailByPhone = memberService.findEmailByPhone(phone);
@@ -130,7 +129,7 @@ public class MemberController implements MemberControllerSwagger {
             @Valid PasswordResetByPhoneRequest req) {
 
         String phone = req.getPhone();
-        if (!snsService.isPhoneVerified(phone)) {
+        if (!snsService.consumePhoneVerification(phone)) {
             return ResponseEntity.ok(ApiResponse.error(BaseCode.PHONE_NOT_VERIFIED));
         }
         memberService.resetPasswordByPhone(phone, req.getNewPwd());
@@ -151,7 +150,7 @@ public class MemberController implements MemberControllerSwagger {
             @Valid PasswordResetByEmailRequest req) {
 
         String email = req.getEmail();
-        if (!emailService.isEmailVerified(email)) {
+        if (!emailService.consumeEmailVerification(email)) {
             return ResponseEntity.ok(ApiResponse.error(BaseCode.EMAIL_NOT_VERIFIED));
         }
         memberService.resetPasswordByEmail(email, req.getNewPwd());

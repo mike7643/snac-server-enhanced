@@ -8,4 +8,7 @@ public interface EmailService {
     void verifyCode(String email, String code);
 
     boolean isEmailVerified(String email);
+
+    // 인증 완료 상태를 1회성으로 소비한다. 이미 사용했거나 인증되지 않았다면 false
+    boolean consumeEmailVerification(String email);
 }

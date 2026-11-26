@@ -38,4 +38,9 @@ public class SnsServiceImpl implements SnsService {
     public boolean isPhoneVerified(String phoneNumber) {
         return verificationCodeService.isVerified(VerificationChannel.SMS, phoneNumber);
     }
+
+    @Override
+    public boolean consumePhoneVerification(String phoneNumber) {
+        return verificationCodeService.consumeVerified(VerificationSubject.phone(phoneNumber));
+    }
 }

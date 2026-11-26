@@ -40,4 +40,9 @@ class EmailServiceImpl implements EmailService {
     public boolean isEmailVerified(String email) {
         return verificationCodeService.isVerified(VerificationChannel.EMAIL, email);
     }
+
+    @Override
+    public boolean consumeEmailVerification(String email) {
+        return verificationCodeService.consumeVerified(VerificationSubject.email(email));
+    }
 }

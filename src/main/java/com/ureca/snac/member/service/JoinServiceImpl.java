@@ -4,6 +4,8 @@ import com.ureca.snac.auth.exception.EmailNotVerifiedException;
 import com.ureca.snac.auth.exception.PhoneNotVerifiedException;
 import com.ureca.snac.auth.service.verify.EmailService;
 import com.ureca.snac.auth.service.verify.SnsService;
+import com.ureca.snac.auth.service.verify.VerificationCodeService;
+import com.ureca.snac.auth.service.verify.VerificationSubject;
 import com.ureca.snac.config.RabbitMQConfig;
 import com.ureca.snac.member.dto.request.JoinRequest;
 import com.ureca.snac.member.entity.Member;
@@ -30,6 +32,7 @@ public class JoinServiceImpl implements JoinService {
     private final BCryptPasswordEncoder passwordEncoder;
     private final SnsService snsService;
     private final EmailService emailService;
+    private final VerificationCodeService verificationCodeService;
     private final RabbitTemplate rabbitTemplate;
 
     @Override
@@ -64,6 +67,10 @@ public class JoinServiceImpl implements JoinService {
         }
         log.info("Nickname < {} > 은 중복이 아님.", nickname);
 
+        // 검증을 모두 통과한 뒤 휴대폰/이메일 인증 상태를 한꺼번에 소비한다.
+        // 같은 인증 상태로 동시에 가입을 시도하면 먼저 소비한 요청만 진행된다.
+        consumeVerifications(phone, email);
+
         Member member = Member.builder()
                 .email(email)
                 .password(passwordEncoder.encode(joinRequest.getPassword()))
@@ -81,6 +88,20 @@ public class JoinServiceImpl implements JoinService {
 
         // 여기서 이벤트 발행 서비스 동작
         publishMemberJoinEvent(member);
+    }
+
+    private void consumeVerifications(String phone, String email) {
+        boolean consumed = verificationCodeService.consumeVerified(
+                VerificationSubject.phone(phone),
+                VerificationSubject.email(email)
+        );
+        if (consumed) {
+            return;
+        }
+        if (!snsService.isPhoneVerified(phone)) {
+            throw new PhoneNotVerifiedException();
+        }
+        throw new EmailNotVerifiedException();
     }
 
     private void publishMemberJoinEvent(Member member) {
