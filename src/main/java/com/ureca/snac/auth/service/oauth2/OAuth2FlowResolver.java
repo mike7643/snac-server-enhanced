@@ -1,6 +1,7 @@
 package com.ureca.snac.auth.service.oauth2;
 
 import com.ureca.snac.auth.util.JWTUtil;
+import com.ureca.snac.auth.util.TokenClaims;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -28,8 +29,13 @@ public class OAuth2FlowResolver {
         String state = request.getParameter("state");
 
         try {
-            // state가 JWT로 정상 해석되면 연동 플로우로 간주한다.
-            String emailFromState = jwtUtil.getUsername(state);
+            // state가 액세스 토큰으로 정상 해석되면 연동 플로우로 간주한다. (refresh/social 토큰은 제외)
+            TokenClaims claims = jwtUtil.parse(state);
+            if (!claims.isCategory(JWTUtil.ACCESS) || claims.username() == null) {
+                log.info("state 가 액세스 토큰이 아님, 로그인 플로우");
+                return OAuth2Flow.login();
+            }
+            String emailFromState = claims.username();
             log.info("state 디코딩 성공, 연동 플로우: email={}", emailFromState);
             return OAuth2Flow.linking(emailFromState);
         } catch (JwtException | IllegalArgumentException e) {

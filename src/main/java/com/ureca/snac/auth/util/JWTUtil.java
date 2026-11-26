@@ -1,5 +1,6 @@
 package com.ureca.snac.auth.util;
 
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -11,6 +12,10 @@ import java.util.Date;
 
 @Component
 public class JWTUtil {
+
+    public static final String ACCESS = "access";
+    public static final String REFRESH = "refresh";
+    public static final String SOCIAL = "social";
 
     private SecretKey secretKey;
 
@@ -26,29 +31,24 @@ public class JWTUtil {
     public JWTUtil(@Value("${spring.jwt.secret}") String secret) {
         secretKey = new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), Jwts.SIG.HS256.key().build().getAlgorithm());
     }
-    // JWT의 서명(시그니처)을 서버의 Secret Key로 대조한다는 뜻. 토큰의 서명이 서버의 비밀키로 만들어진 것과 일치하는지 비교
-    public String getUsername(String token) {
-        return Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload().get("username", String.class);
-    }
 
-    public String getRole(String token) {
-        return Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload().get("role", String.class);
-    }
-
-    public String getCategory(String token) {
-        return Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload().get("category", String.class);
-    }
-
-    public String getProvider(String token) {
-        return Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload().get("provider", String.class);
-    }
-
-    public String getProviderId(String token) {
-        return Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload().get("providerId", String.class);
-    }
-
-    public Boolean isExpired(String token) {
-        return Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload().getExpiration().before(new Date());
+    /**
+     * 서명과 만료를 검증하고 클레임을 꺼낸다.
+     *
+     * @throws io.jsonwebtoken.ExpiredJwtException 만료된 토큰
+     * @throws io.jsonwebtoken.JwtException        서명 불일치, 형식 오류 등 유효하지 않은 토큰
+     * @throws IllegalArgumentException            토큰이 비어 있는 경우
+     */
+    public TokenClaims parse(String token) {
+        // JWT의 서명(시그니처)을 서버의 Secret Key로 대조한다. 서명이 다르거나 만료되었으면 예외가 발생한다.
+        Claims claims = Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload();
+        return new TokenClaims(
+                claims.get("category", String.class),
+                claims.get("username", String.class),
+                claims.get("role", String.class),
+                claims.get("provider", String.class),
+                claims.get("providerId", String.class)
+        );
     }
 
     public String createJwt(String category, String username, String role, Long expiredMs) {
@@ -76,14 +76,14 @@ public class JWTUtil {
     }
 
     public String createAccessToken(String username, String role) {
-        return createJwt("access", username, role, accessExpirationMs);
+        return createJwt(ACCESS, username, role, accessExpirationMs);
     }
 
     public String createRefreshToken(String username, String role) {
-        return createJwt("refresh", username, role, refreshExpirationMs);
+        return createJwt(REFRESH, username, role, refreshExpirationMs);
     }
 
     public String createSocialToken(String username, String role, String provider, String providerId) {
-        return createJwtForSocial("social", username, role, provider, providerId, socialExpirationMs);
+        return createJwtForSocial(SOCIAL, username, role, provider, providerId, socialExpirationMs);
     }
 }

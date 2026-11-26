@@ -1,7 +1,10 @@
 package com.ureca.snac.config;
 
 import com.ureca.snac.auth.util.JWTUtil;
+import com.ureca.snac.auth.util.TokenClaims;
+import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -26,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 
 import static com.ureca.snac.common.RedisKeyConstants.WS_CONNECTED_PREFIX;
 
+@Slf4j
 @Configuration
 @Profile("!scheduler")
 @EnableWebSocketMessageBroker
@@ -72,7 +76,7 @@ public class WebConfigRabbitMQ implements WebSocketMessageBrokerConfigurer {
                     String authHeader = accessor.getFirstNativeHeader("Authorization");
                     if (authHeader != null && authHeader.startsWith("Bearer ")) {
                         String token = authHeader.substring(7);
-                        String email = jwtUtil.getUsername(token);
+                        String email = resolveAccessTokenUsername(token);
 
                         // [중복 접속 체크 & 등록]
                         String redisKey = WS_CONNECTED_PREFIX + email;
@@ -93,5 +97,18 @@ public class WebConfigRabbitMQ implements WebSocketMessageBrokerConfigurer {
                 return message;
             }
         });
+    }
+
+    // STOMP 연결 시에도 HTTP 와 동일하게 액세스 토큰만 허용한다. (refresh/social 토큰, 위변조 토큰 거절)
+    private String resolveAccessTokenUsername(String token) {
+        try {
+            TokenClaims claims = jwtUtil.parse(token);
+            if (claims.isCategory(JWTUtil.ACCESS) && claims.username() != null) {
+                return claims.username();
+            }
+        } catch (JwtException | IllegalArgumentException e) {
+            log.warn("웹소켓 연결 토큰 검증 실패: {}", e.getClass().getSimpleName());
+        }
+        throw new IllegalArgumentException("유효하지 않은 토큰입니다.");
     }
 }
