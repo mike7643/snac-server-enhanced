@@ -21,6 +21,7 @@ class VerificationCodeServiceTest extends RedisContainerSupport {
 
     private static final String SUCCESS = "SUCCESS";
     private static final String EMAIL = "user@snac.com";
+    private static final String PHONE = "01012345678";
 
     private final VerificationCodeService verificationCodeService = createService(new EmailVerificationPolicy());
 
@@ -291,6 +292,82 @@ class VerificationCodeServiceTest extends RedisContainerSupport {
         int open = key.indexOf('{');
         int close = key.indexOf('}', open + 1);
         return key.substring(open + 1, close);
+    }
+
+    @Test
+    void 인증_완료_상태는_한_번만_소비할_수_있다() {
+        // given
+        verifyNow(VerificationChannel.EMAIL, EMAIL);
+
+        // when
+        boolean first = verificationCodeService.consumeVerified(VerificationSubject.email(EMAIL));
+        boolean second = verificationCodeService.consumeVerified(VerificationSubject.email(EMAIL));
+
+        // then
+        assertThat(first).isTrue();
+        assertThat(second).isFalse();
+        assertThat(verificationCodeService.isVerified(VerificationChannel.EMAIL, EMAIL)).isFalse();
+    }
+
+    @Test
+    void 인증되지_않은_상태는_소비되지_않는다() {
+        // given : 코드만 발급되고 검증 전
+        verificationCodeService.generateAndStoreCode(VerificationChannel.EMAIL, EMAIL);
+
+        // when
+        boolean consumed = verificationCodeService.consumeVerified(VerificationSubject.email(EMAIL));
+
+        // then : 발급된 코드는 그대로 남아 있다
+        assertThat(consumed).isFalse();
+        assertThat(redisTemplate.hasKey(VerificationKeys.code(VerificationChannel.EMAIL, EMAIL))).isTrue();
+    }
+
+    @Test
+    void 여러_대상_중_하나라도_인증되지_않았으면_아무것도_소비하지_않는다() {
+        // given : 휴대폰만 인증 완료
+        verifyNow(VerificationChannel.SMS, PHONE);
+
+        // when
+        boolean consumed = verificationCodeService.consumeVerified(
+                VerificationSubject.phone(PHONE), VerificationSubject.email(EMAIL));
+
+        // then
+        assertThat(consumed).isFalse();
+        assertThat(verificationCodeService.isVerified(VerificationChannel.SMS, PHONE)).isTrue();
+    }
+
+    @Test
+    void 여러_대상이_모두_인증되었으면_한꺼번에_소비한다() {
+        // given
+        verifyNow(VerificationChannel.SMS, PHONE);
+        verifyNow(VerificationChannel.EMAIL, EMAIL);
+
+        // when
+        boolean consumed = verificationCodeService.consumeVerified(
+                VerificationSubject.phone(PHONE), VerificationSubject.email(EMAIL));
+
+        // then
+        assertThat(consumed).isTrue();
+        assertThat(verificationCodeService.isVerified(VerificationChannel.SMS, PHONE)).isFalse();
+        assertThat(verificationCodeService.isVerified(VerificationChannel.EMAIL, EMAIL)).isFalse();
+    }
+
+    @Test
+    void 같은_인증_상태를_동시에_사용해도_한_요청만_소비에_성공한다() throws Exception {
+        // given
+        verifyNow(VerificationChannel.SMS, PHONE);
+
+        // when
+        List<Boolean> results = ConcurrentExecutor.run(50,
+                i -> () -> verificationCodeService.consumeVerified(VerificationSubject.phone(PHONE)));
+
+        // then
+        assertThat(results.stream().filter(Boolean::booleanValue).count()).isEqualTo(1);
+    }
+
+    private void verifyNow(VerificationChannel channel, String target) {
+        String code = verificationCodeService.generateAndStoreCode(channel, target).code();
+        verificationCodeService.verifyCode(channel, target, code);
     }
 
     private String attemptVerify(String target, String code) {

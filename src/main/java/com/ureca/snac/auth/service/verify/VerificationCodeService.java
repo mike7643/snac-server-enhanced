@@ -10,6 +10,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,6 +37,7 @@ public class VerificationCodeService {
     private static final DefaultRedisScript<Long> CONSUME_CODE_SCRIPT = createConsumeCodeScript();
     private static final DefaultRedisScript<Long> RESERVE_SEND_SCRIPT = createReserveSendScript();
     private static final DefaultRedisScript<Long> RELEASE_SEND_SCRIPT = createReleaseSendScript();
+    private static final DefaultRedisScript<Long> CONSUME_VERIFIED_SCRIPT = createConsumeVerifiedScript();
 
     private final StringRedisTemplate redisTemplate;
     private final Map<VerificationChannel, VerificationPolicy> policies;
@@ -146,6 +148,22 @@ public class VerificationCodeService {
         return VERIFIED_MARKER.equals(value);
     }
 
+    /**
+     * 인증 완료 상태를 사용하는 시점(회원가입, 비밀번호 재설정 등)에 1회성으로 소비한다.
+     * 여러 대상을 넘기면 모두 인증 완료 상태일 때만 한꺼번에 소비하고, 하나라도 아니면 아무것도 소비하지 않는다.
+     *
+     * @return 소비에 성공하면 true, 인증 완료 상태가 아니거나 이미 소비되었으면 false
+     */
+    public boolean consumeVerified(VerificationSubject... subjects) {
+        if (subjects.length == 0) {
+            throw new InternalServerException(BaseCode.VERIFICATION_INTERNAL_ERROR);
+        }
+        List<String> keys = Arrays.stream(subjects)
+                .map(subject -> VerificationKeys.code(subject.channel(), subject.target()))
+                .toList();
+        return executeScript(CONSUME_VERIFIED_SCRIPT, keys, VERIFIED_MARKER) == 1L;
+    }
+
     private Long executeScript(DefaultRedisScript<Long> script, List<String> keys, Object... args) {
         Long result;
         try {
@@ -237,6 +255,19 @@ public class VerificationCodeService {
                         + "redis.call('DEL', KEYS[1])\n"
                         + "local sent = tonumber(redis.call('GET', KEYS[2]) or '0')\n"
                         + "if sent > 0 then redis.call('DECR', KEYS[2]) end\n"
+                        + "return 1"
+        );
+    }
+
+    private static DefaultRedisScript<Long> createConsumeVerifiedScript() {
+        // KEYS[n]=코드(인증 완료 시 마커 상태) / ARGV[1]=verified 마커
+        // 확인과 삭제 사이에 다른 요청이 끼어들면 같은 인증 상태가 두 번 사용될 수 있어 한 번에 처리한다.
+        // 서로 다른 대상(이메일+휴대폰)은 해시태그가 달라 Redis Cluster 에서는 같은 슬롯을 보장하지 않는다. (현재 단일 노드 운영)
+        return script(
+                "for _, key in ipairs(KEYS) do\n"
+                        + "  if redis.call('GET', key) ~= ARGV[1] then return 0 end\n"
+                        + "end\n"
+                        + "for _, key in ipairs(KEYS) do redis.call('DEL', key) end\n"
                         + "return 1"
         );
     }
