@@ -2,6 +2,7 @@ package com.ureca.snac.auth.oauth2;
 
 import com.ureca.snac.auth.config.OAuthRedirectProperties;
 import com.ureca.snac.auth.dto.CustomOAuth2User;
+import com.ureca.snac.auth.service.oauth2.SocialLoginTokenRegistry;
 import com.ureca.snac.auth.util.JWTUtil;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -14,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
+import java.util.UUID;
 
 @Slf4j
 @Component
@@ -22,6 +24,7 @@ public class CustomOAuth2SuccessHandler implements AuthenticationSuccessHandler 
 
     private final JWTUtil jwtUtil;
     private final OAuthRedirectProperties oAuthRedirectProperties;
+    private final SocialLoginTokenRegistry socialLoginTokenRegistry;
 
     @Override
     @Transactional
@@ -32,10 +35,8 @@ public class CustomOAuth2SuccessHandler implements AuthenticationSuccessHandler 
         log.info("OAuth2 로그인 성공. CustomOAuth2SuccessHandler 시작");
 
         log.debug("요청 URI: {}", request.getRequestURI());
-        log.debug("Authentication 객체: {}", authentication);
 
         CustomOAuth2User user = (CustomOAuth2User) authentication.getPrincipal();
-        log.debug("OAuth2User principal: {}", user);
 
         String provider   = user.getProvider();
         String providerId = user.getProviderId();
@@ -46,16 +47,17 @@ public class CustomOAuth2SuccessHandler implements AuthenticationSuccessHandler 
         String role = authentication.getAuthorities().iterator().next().getAuthority();
         log.info("사용자 이메일: {}, 권한: {}", email, role);
 
-        log.info("socialToken 생성");
-        String socialToken = jwtUtil.createSocialToken(email, role, provider, providerId);
-        log.debug("socialToken 생성 완료: {}", socialToken);
+        // social 토큰은 1회용: 토큰 ID를 등록해 두고 /api/social-login 교환 시 소비한다.
+        String tokenId = UUID.randomUUID().toString();
+        socialLoginTokenRegistry.register(tokenId, jwtUtil.socialTokenTtl());
+        String socialToken = jwtUtil.createSocialToken(tokenId, email, role, provider, providerId);
 
-        log.info("리다이렉트 URL 생성 및 토큰 추가");
         String redirectUrl = UriComponentsBuilder.fromUriString(oAuthRedirectProperties.getRedirectUri())
                 .queryParam("social", socialToken)
                 .build().toUriString();
 
-        log.info("토큰을 포함하여 리다이렉트: {}", redirectUrl);
+        // 토큰이 포함된 URL 은 로그에 남기지 않는다.
+        log.info("social 토큰 발급 후 프론트로 리다이렉트");
         response.sendRedirect(redirectUrl);
 
         log.info("CustomOAuth2SuccessHandler 처리 완료");

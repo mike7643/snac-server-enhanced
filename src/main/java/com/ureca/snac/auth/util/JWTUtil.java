@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.Date;
 
 @Component
@@ -43,6 +44,7 @@ public class JWTUtil {
         // JWT의 서명(시그니처)을 서버의 Secret Key로 대조한다. 서명이 다르거나 만료되었으면 예외가 발생한다.
         Claims claims = Jwts.parser().verifyWith(secretKey).build().parseSignedClaims(token).getPayload();
         return new TokenClaims(
+                claims.getId(),
                 claims.get("category", String.class),
                 claims.get("username", String.class),
                 claims.get("role", String.class),
@@ -62,8 +64,9 @@ public class JWTUtil {
                 .compact();
     }
 
-    public String createJwtForSocial(String category, String username, String role, String provider, String providerId, Long expiredMs) {
+    public String createJwtForSocial(String tokenId, String category, String username, String role, String provider, String providerId, Long expiredMs) {
         return Jwts.builder()
+                .id(tokenId)
                 .claim("category", category)
                 .claim("username", username)
                 .claim("role", role)
@@ -83,7 +86,11 @@ public class JWTUtil {
         return createJwt(REFRESH, username, role, refreshExpirationMs);
     }
 
-    public String createSocialToken(String username, String role, String provider, String providerId) {
-        return createJwtForSocial(SOCIAL, username, role, provider, providerId, socialExpirationMs);
+    public String createSocialToken(String tokenId, String username, String role, String provider, String providerId) {
+        return createJwtForSocial(tokenId, SOCIAL, username, role, provider, providerId, socialExpirationMs);
+    }
+
+    public Duration socialTokenTtl() {
+        return Duration.ofMillis(socialExpirationMs);
     }
 }

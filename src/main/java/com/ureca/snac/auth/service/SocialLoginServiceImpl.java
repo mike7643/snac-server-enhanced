@@ -6,6 +6,7 @@ import com.ureca.snac.auth.util.JWTUtil;
 import com.ureca.snac.common.BaseCode;
 import com.ureca.snac.member.entity.Member;
 import com.ureca.snac.auth.oauth2.SocialProvider;
+import com.ureca.snac.auth.service.oauth2.SocialLoginTokenRegistry;
 import com.ureca.snac.member.entity.SocialLink;
 import com.ureca.snac.member.repository.SocialLinkRepository;
 import com.ureca.snac.auth.util.TokenClaims;
@@ -23,6 +24,7 @@ public class SocialLoginServiceImpl implements SocialLoginService {
 
     private final JWTUtil jwtUtil;
     private final TokenIssuer tokenIssuer;
+    private final SocialLoginTokenRegistry socialLoginTokenRegistry;
     private final SocialLinkRepository socialLinkRepository;
 
     @Override
@@ -52,6 +54,12 @@ public class SocialLoginServiceImpl implements SocialLoginService {
         if (!claims.isCategory(JWTUtil.SOCIAL)) {
             // 유효하지 않은 토큰인 경우
             log.warn("잘못된 토큰 카테고리: {}", claims.category());
+            throw new SocialLoginException(BaseCode.SOCIAL_TOKEN_INVALID);
+        }
+
+        // 1회용 토큰 소비 (이미 교환에 사용된 토큰이면 재사용 차단)
+        if (!socialLoginTokenRegistry.consume(claims.tokenId())) {
+            log.warn("이미 사용되었거나 등록되지 않은 소셜 토큰");
             throw new SocialLoginException(BaseCode.SOCIAL_TOKEN_INVALID);
         }
 
