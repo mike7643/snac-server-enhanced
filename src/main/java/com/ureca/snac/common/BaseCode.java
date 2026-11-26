@@ -92,6 +92,7 @@ public enum BaseCode {
     // 문자 인증코드 인증- 예외
     SMS_CODE_VERIFICATION_EXPIRED("SMS_CODE_VERIFICATION_EXPIRED_401", HttpStatus.UNAUTHORIZED, "문자 인증번호가 만료되었거나 존재하지 않습니다."),
     SMS_CODE_VERIFICATION_MISMATCH("SMS_CODE_VERIFICATION_MISMATCH_401", HttpStatus.UNAUTHORIZED, "문자 인증번호가 일치하지 않습니다."),
+    SMS_CODE_VERIFICATION_ATTEMPTS_EXCEEDED("SMS_CODE_VERIFICATION_ATTEMPTS_EXCEEDED_429", HttpStatus.TOO_MANY_REQUESTS, "문자 인증번호 입력 횟수를 초과했습니다. 인증번호를 다시 요청해주세요."),
     VERIFICATION_INTERNAL_ERROR("VERIFICATION_INTERNAL_ERROR_500", HttpStatus.INTERNAL_SERVER_ERROR, "인증 처리 중 내부 오류가 발생했습니다."),
 
     //이메일 인증코드 인증- 성공
@@ -100,6 +101,11 @@ public enum BaseCode {
     //이메일 인증코드 인증- 예외
     EMAIL_CODE_VERIFICATION_EXPIRED("EMAIL_CODE_VERIFICATION_EXPIRED_401", HttpStatus.UNAUTHORIZED, "Email 인증번호가 만료되었거나 존재하지 않습니다."),
     EMAIL_CODE_VERIFICATION_MISMATCH("EMAIL_CODE_VERIFICATION_MISMATCH_401", HttpStatus.UNAUTHORIZED, "Email 인증번호가 일치하지 않습니다."),
+    EMAIL_CODE_VERIFICATION_ATTEMPTS_EXCEEDED("EMAIL_CODE_VERIFICATION_ATTEMPTS_EXCEEDED_429", HttpStatus.TOO_MANY_REQUESTS, "Email 인증번호 입력 횟수를 초과했습니다. 인증번호를 다시 요청해주세요."),
+
+    // 인증코드 발송 제한
+    VERIFICATION_RESEND_TOO_EARLY("VERIFICATION_RESEND_TOO_EARLY_429", HttpStatus.TOO_MANY_REQUESTS, "인증번호는 잠시 후 다시 요청할 수 있습니다."),
+    VERIFICATION_DAILY_LIMIT_EXCEEDED("VERIFICATION_DAILY_LIMIT_EXCEEDED_429", HttpStatus.TOO_MANY_REQUESTS, "오늘 요청 가능한 인증번호 발송 횟수를 초과했습니다."),
 
     // 휴대폰번호 검증 - 실패
     PHONE_NOT_VERIFIED("PHONE_NOT_VERIFIED_422", HttpStatus.UNPROCESSABLE_ENTITY, "휴대폰 인증이 완료되지 않았습니다."),

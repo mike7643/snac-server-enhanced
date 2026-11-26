@@ -1,6 +1,7 @@
 package com.ureca.snac.auth.listener;
 
 import com.ureca.snac.auth.exception.SmsSendFailedException;
+import com.ureca.snac.auth.service.verify.IssuedVerificationCode;
 import com.ureca.snac.auth.service.verify.VerificationChannel;
 import com.ureca.snac.auth.service.verify.VerificationCodeService;
 import com.ureca.snac.config.RabbitMQConfig;
@@ -46,8 +47,8 @@ public class SmsListenerServiceImpl implements SmsListenerService {
 
     @RabbitListener(queues = RabbitMQConfig.SMS_AUTH_QUEUE)
     public void sendVerificationCode(String phoneNumber) {
-        String verificationCode = verificationCodeService.generateAndStoreCode(VerificationChannel.SMS, phoneNumber);
-        String message = String.format("[SNAC] 인증번호[%s]를 입력해주세요.", verificationCode);
+        IssuedVerificationCode issued = verificationCodeService.generateAndStoreCode(VerificationChannel.SMS, phoneNumber);
+        String message = String.format("[SNAC] 인증번호[%s]를 입력해주세요. (%d분간 유효)", issued.code(), issued.ttlMinutes());
         String formatPhoneNumber = formatToE164(phoneNumber);
 
         try {
@@ -56,11 +57,19 @@ public class SmsListenerServiceImpl implements SmsListenerService {
                     .phoneNumber(formatPhoneNumber)
                     .build());
 
-            log.info("Sent message {} to {} with messageId {}", message, phoneNumber, response.messageId());
+            // 인증번호가 로그에 남지 않도록 메시지 본문은 기록하지 않는다.
+            log.info("Sent verification sms to {} with messageId {}", maskPhoneNumber(phoneNumber), response.messageId());
         } catch (Exception e) {
             log.error("Error sending SMS to {}: {}", formatPhoneNumber, e.getMessage(), e);
             throw new SmsSendFailedException();
         }
+    }
+
+    private String maskPhoneNumber(String phoneNumber) {
+        if (phoneNumber == null || phoneNumber.length() < 4) {
+            return "****";
+        }
+        return "*".repeat(phoneNumber.length() - 4) + phoneNumber.substring(phoneNumber.length() - 4);
     }
 
     private String formatToE164(String phoneNumber) {

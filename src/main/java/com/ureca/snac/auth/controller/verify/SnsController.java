@@ -23,6 +23,7 @@ public class SnsController implements SnsControllerSwagger {
 
     @Override
     public ResponseEntity<ApiResponse<Void>> sendVerificationCode(@Valid @RequestBody PhoneRequest dto) {
+        snsService.reserveCodeSend(dto.getPhone());
         rabbitTemplate.convertAndSend(RabbitMQConfig.SMS_EXCHANGE, RabbitMQConfig.SMS_AUTH_ROUTING_KEY, dto.getPhone());
         return ResponseEntity.ok(ApiResponse.ok(SMS_VERIFICATION_SENT));
     }

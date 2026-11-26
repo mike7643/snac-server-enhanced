@@ -54,6 +54,7 @@ public class MemberController implements MemberControllerSwagger {
 
         memberService.checkPassword(userDetails.getUsername(), phoneChangeRequest);
 
+        snsService.reserveCodeSend(phoneChangeRequest.getNewPhone());
         rabbitTemplate.convertAndSend(RabbitMQConfig.SMS_EXCHANGE, RabbitMQConfig.SMS_AUTH_ROUTING_KEY, phoneChangeRequest.getNewPhone());
 //        snsService.sendVerificationCode(phoneChangeRequest.getNewPhone()); // 기존 코드를 rabbitMQ 비동기로 변경했습니다.
         return ResponseEntity.ok(ApiResponse.ok(BaseCode.PHONE_EXIST_SUCCESS));

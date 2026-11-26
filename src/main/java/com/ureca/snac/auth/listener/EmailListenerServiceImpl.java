@@ -1,6 +1,7 @@
 package com.ureca.snac.auth.listener;
 
 import com.ureca.snac.auth.exception.EmailSendFailedException;
+import com.ureca.snac.auth.service.verify.IssuedVerificationCode;
 import com.ureca.snac.auth.service.verify.VerificationChannel;
 import com.ureca.snac.auth.service.verify.VerificationCodeService;
 import com.ureca.snac.auth.util.EmailTool;
@@ -23,7 +24,7 @@ public class EmailListenerServiceImpl implements EmailListenerService {
     @Override
     @RabbitListener(queues = RabbitMQConfig.EMAIL_QUEUE)
     public void sendVerificationCode(String email) {
-        String verificationCode = verificationCodeService.generateAndStoreCode(VerificationChannel.EMAIL, email);
+        IssuedVerificationCode issued = verificationCodeService.generateAndStoreCode(VerificationChannel.EMAIL, email);
         String title = "[SNAC] 이메일 인증 코드";
         String message = String.format("""
             안녕하세요, SNAC입니다.
@@ -32,13 +33,13 @@ public class EmailListenerServiceImpl implements EmailListenerService {
             인증번호: %s
             
             SNAC 앱으로 돌아가 화면에 이 인증번호를 입력해주세요.
-            인증번호는 5분간 유효합니다.
+            인증번호는 %d분간 유효합니다.
             
             본인이 요청하지 않으셨다면 이 메일을 무시하셔도 됩니다.
             
             감사합니다.
             SNAC 팀 드림
-            """, verificationCode);
+            """, issued.code(), issued.ttlMinutes());
 
         try {
             emailTool.sendEmail(email, title, message);
