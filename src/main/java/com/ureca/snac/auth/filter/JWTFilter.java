@@ -7,7 +7,9 @@ import com.ureca.snac.common.ApiResponse;
 import com.ureca.snac.common.BaseCode;
 import com.ureca.snac.member.entity.Member;
 import com.ureca.snac.member.Role;
+import com.ureca.snac.auth.util.TokenClaims;
 import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -47,27 +49,29 @@ public class JWTFilter extends OncePerRequestFilter {
         }
         String accessToken = header.substring(7);
 
-        // 토큰 만료 여부 확인
+        // 서명/만료 검증 (위변조, 형식 오류 토큰도 500 이 아닌 401 로 응답)
+        TokenClaims claims;
         try {
-            jwtUtil.isExpired(accessToken);
+            claims = jwtUtil.parse(accessToken);
         } catch (ExpiredJwtException e) {
             sendErrorResponse(response, BaseCode.TOKEN_EXPIRED);
             return;
-        }
-
-        // 토큰이 access 맞는지 확인
-        String category = jwtUtil.getCategory(accessToken);
-        if (!category.equals("access")) {
+        } catch (JwtException | IllegalArgumentException e) {
+            log.warn("유효하지 않은 액세스 토큰: {}", e.getClass().getSimpleName());
             sendErrorResponse(response, BaseCode.TOKEN_INVALID);
             return;
         }
 
-        String username = jwtUtil.getUsername(accessToken);
-        String role = jwtUtil.getRole(accessToken);
+        // 토큰이 access 맞는지 확인 (refresh, social 토큰으로 API 접근 차단)
+        Role role = resolveRole(claims.role());
+        if (!claims.isCategory(JWTUtil.ACCESS) || claims.username() == null || role == null) {
+            sendErrorResponse(response, BaseCode.TOKEN_INVALID);
+            return;
+        }
 
         Member member = Member.builder()
-                .email(username)
-                .role(Role.valueOf(role))
+                .email(claims.username())
+                .role(role)
                 .build();
         CustomUserDetails customUserDetails = new CustomUserDetails(member);
 
@@ -77,6 +81,17 @@ public class JWTFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
+
+    private Role resolveRole(String role) {
+        if (role == null) {
+            return null;
+        }
+        try {
+            return Role.valueOf(role);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
 
     private void sendErrorResponse(HttpServletResponse response, BaseCode code) throws IOException {
         response.setContentType("application/json; charset=UTF-8");

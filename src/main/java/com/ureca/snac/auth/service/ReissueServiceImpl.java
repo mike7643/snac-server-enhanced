@@ -6,7 +6,9 @@ import com.ureca.snac.auth.refresh.Refresh;
 import com.ureca.snac.auth.util.JWTUtil;
 import com.ureca.snac.auth.repository.RefreshRepository;
 import com.ureca.snac.common.BaseCode;
+import com.ureca.snac.auth.util.TokenClaims;
 import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -26,29 +28,31 @@ public class ReissueServiceImpl implements ReissueService {
             throw new RefreshTokenException(BaseCode.REFRESH_TOKEN_NULL);
         }
 
-        // 2. 만료 췍
+        // 2. 서명/만료 췍
+        TokenClaims claims;
         try {
-            jwtUtil.isExpired(refresh);
+            claims = jwtUtil.parse(refresh);
         } catch (ExpiredJwtException e) {
             refreshRepository.findByRefresh(refresh).ifPresent(refreshRepository::delete);
             throw new RefreshTokenException(BaseCode.REFRESH_TOKEN_EXPIRED);
-        }
-
-        // 3. 리프레시 토큰 맞는지 췍
-        String category = jwtUtil.getCategory(refresh);
-        if (!"refresh".equals(category)) {
+        } catch (JwtException | IllegalArgumentException e) {
             throw new RefreshTokenException(BaseCode.INVALID_REFRESH_TOKEN);
         }
 
-        // 4. 레디스에 저장된 토큰인지 확인
-        String username = jwtUtil.getUsername(refresh);
+        // 3. 리프레시 토큰 맞는지 췍
+        if (!claims.isCategory(JWTUtil.REFRESH)) {
+            throw new RefreshTokenException(BaseCode.INVALID_REFRESH_TOKEN);
+        }
+
+        // 4. 레디스에 저장된 토큰인지 확인 (이미 회전되어 폐기된 토큰이면 거절)
+        String username = claims.username();
         Refresh storedRefresh = refreshRepository.findByRefresh(refresh)
                 .orElseThrow(() -> new RefreshTokenException(BaseCode.INVALID_REFRESH_TOKEN));
 
         if (!storedRefresh.getEmail().equals(username)) {
             throw new RefreshTokenException(BaseCode.INVALID_REFRESH_TOKEN);
         }
-        String role = jwtUtil.getRole(refresh);
+        String role = claims.role();
 
         // 5. 새 access/refresh 발급 + refresh 저장
         return tokenIssuer.issue(username, role);

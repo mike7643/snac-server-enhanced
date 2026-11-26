@@ -6,7 +6,9 @@ import com.ureca.snac.auth.service.AuthCookieService;
 import com.ureca.snac.auth.util.JWTUtil;
 import com.ureca.snac.common.ApiResponse;
 import com.ureca.snac.common.BaseCode;
+import com.ureca.snac.auth.util.TokenClaims;
 import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletRequest;
@@ -52,16 +54,20 @@ public class CustomLogoutFilter extends GenericFilterBean {
             return;
         }
 
-        // 만료 체크
+        // 서명/만료 체크
+        TokenClaims claims;
         try {
-            jwtUtil.isExpired(refresh);
+            claims = jwtUtil.parse(refresh);
         } catch (ExpiredJwtException e) {
             sendErrorResponse(response, BaseCode.REFRESH_TOKEN_EXPIRED);
+            return;
+        } catch (JwtException | IllegalArgumentException e) {
+            sendErrorResponse(response, BaseCode.INVALID_REFRESH_TOKEN);
             return;
         }
 
         // 리프레시 맞는지 체크
-        if (!"refresh".equals(jwtUtil.getCategory(refresh))) {
+        if (!claims.isCategory(JWTUtil.REFRESH)) {
             sendErrorResponse(response, BaseCode.INVALID_REFRESH_TOKEN);
             return;
         }
