@@ -19,12 +19,12 @@ class EmailServiceImpl implements EmailService {
 
     @Override
     public void sendVerificationCode(String email) {
-        verificationCodeService.reserveSend(VerificationChannel.EMAIL, email);
+        String reservationId = verificationCodeService.reserveSend(VerificationChannel.EMAIL, email);
         try {
             rabbitTemplate.convertAndSend(RabbitMQConfig.EMAIL_EXCHANGE, RabbitMQConfig.EMAIL_ROUTING_KEY, email);
         } catch (AmqpException e) {
             // 발송 요청 자체가 실패했으면 한도를 소비하지 않도록 예약을 되돌린다.
-            verificationCodeService.releaseSend(VerificationChannel.EMAIL, email);
+            verificationCodeService.releaseSend(VerificationChannel.EMAIL, email, reservationId);
             log.error("인증 메일 발송 요청 발행 실패", e);
             throw new EmailSendFailedException();
         }

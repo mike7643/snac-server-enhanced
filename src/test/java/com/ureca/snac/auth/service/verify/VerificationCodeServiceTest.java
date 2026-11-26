@@ -181,12 +181,13 @@ class VerificationCodeServiceTest extends RedisContainerSupport {
     @Test
     void 발행_실패로_예약을_되돌리면_바로_다시_요청할_수_있고_일일_횟수도_복구된다() {
         // given
-        verificationCodeService.reserveSend(VerificationChannel.EMAIL, EMAIL);
+        String reservationId = verificationCodeService.reserveSend(VerificationChannel.EMAIL, EMAIL);
 
         // when
-        verificationCodeService.releaseSend(VerificationChannel.EMAIL, EMAIL);
+        boolean released = verificationCodeService.releaseSend(VerificationChannel.EMAIL, EMAIL, reservationId);
 
         // then
+        assertThat(released).isTrue();
         assertThat(redisTemplate.opsForValue().get(VerificationKeys.dailySend(VerificationChannel.EMAIL, EMAIL))).isEqualTo("0");
         assertThat(attemptReserve(verificationCodeService, EMAIL)).isEqualTo(SUCCESS);
     }
@@ -194,10 +195,42 @@ class VerificationCodeServiceTest extends RedisContainerSupport {
     @Test
     void 집계_키가_없을_때_예약을_되돌려도_횟수가_음수가_되지_않는다() {
         // when
-        verificationCodeService.releaseSend(VerificationChannel.EMAIL, EMAIL);
+        boolean released = verificationCodeService.releaseSend(VerificationChannel.EMAIL, EMAIL, "unknown");
 
         // then
+        assertThat(released).isFalse();
         assertThat(redisTemplate.hasKey(VerificationKeys.dailySend(VerificationChannel.EMAIL, EMAIL))).isFalse();
+    }
+
+    @Test
+    void 늦게_실패한_이전_예약을_되돌려도_새_예약의_대기와_횟수는_유지된다() {
+        // given : 요청 A 예약 후 발행이 지연되는 사이 대기 시간이 지나 요청 B 가 새로 예약
+        String reservationA = verificationCodeService.reserveSend(VerificationChannel.EMAIL, EMAIL);
+        redisTemplate.delete(VerificationKeys.cooldown(VerificationChannel.EMAIL, EMAIL)); // A 의 대기 시간 만료
+        verificationCodeService.reserveSend(VerificationChannel.EMAIL, EMAIL);
+
+        // when : 뒤늦게 A 의 발행이 실패해 해제 시도
+        boolean released = verificationCodeService.releaseSend(VerificationChannel.EMAIL, EMAIL, reservationA);
+
+        // then : B 의 대기 키와 집계는 그대로
+        assertThat(released).isFalse();
+        assertThat(attemptReserve(verificationCodeService, EMAIL)).isEqualTo(BaseCode.VERIFICATION_RESEND_TOO_EARLY.name());
+        assertThat(redisTemplate.opsForValue().get(VerificationKeys.dailySend(VerificationChannel.EMAIL, EMAIL))).isEqualTo("2");
+    }
+
+    @Test
+    void 같은_예약을_두_번_되돌려도_한_번만_반영된다() {
+        // given
+        String reservationId = verificationCodeService.reserveSend(VerificationChannel.EMAIL, EMAIL);
+
+        // when
+        boolean first = verificationCodeService.releaseSend(VerificationChannel.EMAIL, EMAIL, reservationId);
+        boolean second = verificationCodeService.releaseSend(VerificationChannel.EMAIL, EMAIL, reservationId);
+
+        // then
+        assertThat(first).isTrue();
+        assertThat(second).isFalse();
+        assertThat(redisTemplate.opsForValue().get(VerificationKeys.dailySend(VerificationChannel.EMAIL, EMAIL))).isEqualTo("0");
     }
 
     @Test

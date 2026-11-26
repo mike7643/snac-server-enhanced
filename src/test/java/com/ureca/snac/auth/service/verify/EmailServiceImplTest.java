@@ -36,24 +36,28 @@ class EmailServiceImplTest {
 
     @Test
     void 발송_요청_발행에_성공하면_예약을_유지한다() {
+        // given
+        when(verificationCodeService.reserveSend(VerificationChannel.EMAIL, EMAIL)).thenReturn("reservation");
+
         // when
         emailService.sendVerificationCode(EMAIL);
 
         // then
         verify(verificationCodeService).reserveSend(VerificationChannel.EMAIL, EMAIL);
         verify(rabbitTemplate).convertAndSend(RabbitMQConfig.EMAIL_EXCHANGE, RabbitMQConfig.EMAIL_ROUTING_KEY, (Object) EMAIL);
-        verify(verificationCodeService, never()).releaseSend(any(), anyString());
+        verify(verificationCodeService, never()).releaseSend(any(), anyString(), anyString());
     }
 
     @Test
-    void 발송_요청_발행에_실패하면_예약을_되돌린다() {
+    void 발송_요청_발행에_실패하면_자기_예약을_되돌린다() {
         // given
+        when(verificationCodeService.reserveSend(VerificationChannel.EMAIL, EMAIL)).thenReturn("reservation");
         doThrow(new AmqpConnectException(new ConnectException("down")))
                 .when(rabbitTemplate).convertAndSend(anyString(), anyString(), (Object) anyString());
 
         // when & then
         assertThrows(EmailSendFailedException.class, () -> emailService.sendVerificationCode(EMAIL));
-        verify(verificationCodeService).releaseSend(VerificationChannel.EMAIL, EMAIL);
+        verify(verificationCodeService).releaseSend(VerificationChannel.EMAIL, EMAIL, "reservation");
     }
 
     @Test
@@ -71,11 +75,12 @@ class EmailServiceImplTest {
     void 문자_발송_요청_발행에_실패해도_예약을_되돌린다() {
         // given
         SnsServiceImpl snsService = new SnsServiceImpl(verificationCodeService, rabbitTemplate);
+        when(verificationCodeService.reserveSend(VerificationChannel.SMS, "01012345678")).thenReturn("reservation");
         doThrow(new AmqpConnectException(new ConnectException("down")))
                 .when(rabbitTemplate).convertAndSend(anyString(), anyString(), (Object) anyString());
 
         // when & then
         assertThrows(SmsSendFailedException.class, () -> snsService.sendVerificationCode("01012345678"));
-        verify(verificationCodeService).releaseSend(VerificationChannel.SMS, "01012345678");
+        verify(verificationCodeService).releaseSend(VerificationChannel.SMS, "01012345678", "reservation");
     }
 }

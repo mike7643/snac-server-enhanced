@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -53,15 +54,19 @@ public class VerificationCodeService {
     /**
      * 발송 요청 단계에서 재발송 대기 시간과 일일 발송 한도를 원자적으로 확인하고 1회분을 예약한다.
      * 메시지 큐에 발행하기 전에 호출해서, 한도를 넘는 요청은 문자/메일 비용이 발생하기 전에 거절한다.
+     *
+     * @return 이번 예약의 식별자 (발행 실패 시 이 예약만 되돌리기 위해 사용)
      */
-    public void reserveSend(VerificationChannel channel, String target) {
+    public String reserveSend(VerificationChannel channel, String target) {
         VerificationPolicy policy = getPolicy(channel);
+        String reservationId = UUID.randomUUID().toString();
         Long result = executeScript(
                 RESERVE_SEND_SCRIPT,
                 List.of(VerificationKeys.cooldown(channel, target), VerificationKeys.dailySend(channel, target)),
                 String.valueOf(toPositiveMillis(policy.resendCooldown())),
                 String.valueOf(policy.dailySendLimit()),
-                String.valueOf(DAILY_SEND_WINDOW.toMillis())
+                String.valueOf(DAILY_SEND_WINDOW.toMillis()),
+                reservationId
         );
 
         if (result == SEND_COOLDOWN) {
@@ -73,17 +78,23 @@ public class VerificationCodeService {
         if (result != SEND_RESERVED) {
             throw new InternalServerException(BaseCode.VERIFICATION_INTERNAL_ERROR);
         }
+        return reservationId;
     }
 
     /**
-     * 예약 후 메시지 발행에 실패했을 때 예약을 되돌린다.
-     * 재발송 대기를 풀고 일일 발송 횟수를 1 줄인다. (집계 키가 이미 만료되었으면 아무것도 하지 않는다)
+     * 예약 후 메시지 발행에 실패했을 때 그 예약만 되돌린다.
+     * 재발송 대기 키가 아직 이 예약의 것일 때만 대기를 풀고 일일 발송 횟수를 1 줄인다.
+     * 발행이 지연되는 사이 대기 시간이 지나 다른 요청이 새로 예약했다면, 새 예약의 대기 키와 횟수는 건드리지 않는다.
+     *
+     * @return 예약을 되돌렸으면 true, 이미 이 예약의 대기 시간이 지나 되돌릴 것이 없으면 false
      */
-    public void releaseSend(VerificationChannel channel, String target) {
-        executeScript(
+    public boolean releaseSend(VerificationChannel channel, String target, String reservationId) {
+        Long result = executeScript(
                 RELEASE_SEND_SCRIPT,
-                List.of(VerificationKeys.cooldown(channel, target), VerificationKeys.dailySend(channel, target))
+                List.of(VerificationKeys.cooldown(channel, target), VerificationKeys.dailySend(channel, target)),
+                reservationId
         );
+        return result == 1L;
     }
 
     public IssuedVerificationCode generateAndStoreCode(VerificationChannel channel, String target) {
@@ -205,7 +216,7 @@ public class VerificationCodeService {
 
     private static DefaultRedisScript<Long> createReserveSendScript() {
         // KEYS[1]=재발송 대기, KEYS[2]=일일 발송 횟수
-        // ARGV[1]=재발송 대기(ms), ARGV[2]=일일 한도, ARGV[3]=일일 집계 구간(ms)
+        // ARGV[1]=재발송 대기(ms), ARGV[2]=일일 한도, ARGV[3]=일일 집계 구간(ms), ARGV[4]=예약 식별자
         // 한도에 걸린 요청은 횟수에 포함하지 않는다.
         return script(
                 "if redis.call('EXISTS', KEYS[1]) == 1 then return -1 end\n"
@@ -213,15 +224,17 @@ public class VerificationCodeService {
                         + "if sent >= tonumber(ARGV[2]) then return -2 end\n"
                         + "sent = redis.call('INCR', KEYS[2])\n"
                         + "if sent == 1 then redis.call('PEXPIRE', KEYS[2], ARGV[3]) end\n"
-                        + "redis.call('SET', KEYS[1], '1', 'PX', ARGV[1])\n"
+                        + "redis.call('SET', KEYS[1], ARGV[4], 'PX', ARGV[1])\n"
                         + "return 1"
         );
     }
 
     private static DefaultRedisScript<Long> createReleaseSendScript() {
-        // KEYS[1]=재발송 대기, KEYS[2]=일일 발송 횟수
+        // KEYS[1]=재발송 대기, KEYS[2]=일일 발송 횟수 / ARGV[1]=예약 식별자
+        // 대기 키가 살아 있는 동안에는 다른 예약이 끼어들 수 없으므로, 대기 키가 내 것이면 일일 횟수도 내 예약분이 포함된 구간이다.
         return script(
-                "redis.call('DEL', KEYS[1])\n"
+                "if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end\n"
+                        + "redis.call('DEL', KEYS[1])\n"
                         + "local sent = tonumber(redis.call('GET', KEYS[2]) or '0')\n"
                         + "if sent > 0 then redis.call('DECR', KEYS[2]) end\n"
                         + "return 1"

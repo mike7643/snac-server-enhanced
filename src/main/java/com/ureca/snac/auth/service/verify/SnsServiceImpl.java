@@ -18,12 +18,12 @@ public class SnsServiceImpl implements SnsService {
 
     @Override
     public void sendVerificationCode(String phoneNumber) {
-        verificationCodeService.reserveSend(VerificationChannel.SMS, phoneNumber);
+        String reservationId = verificationCodeService.reserveSend(VerificationChannel.SMS, phoneNumber);
         try {
             rabbitTemplate.convertAndSend(RabbitMQConfig.SMS_EXCHANGE, RabbitMQConfig.SMS_AUTH_ROUTING_KEY, phoneNumber);
         } catch (AmqpException e) {
             // 발송 요청 자체가 실패했으면 한도를 소비하지 않도록 예약을 되돌린다.
-            verificationCodeService.releaseSend(VerificationChannel.SMS, phoneNumber);
+            verificationCodeService.releaseSend(VerificationChannel.SMS, phoneNumber, reservationId);
             log.error("인증 문자 발송 요청 발행 실패", e);
             throw new SmsSendFailedException();
         }
