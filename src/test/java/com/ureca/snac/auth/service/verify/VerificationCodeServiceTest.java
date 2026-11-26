@@ -110,8 +110,8 @@ class VerificationCodeServiceTest extends RedisContainerSupport {
         attemptVerify(EMAIL, wrongCodeOf(code));
 
         // then
-        Long codeTtl = redisTemplate.getExpire("email:code:{" + EMAIL + "}");
-        Long attemptTtl = redisTemplate.getExpire("email:attempt:{" + EMAIL + "}");
+        Long codeTtl = redisTemplate.getExpire(VerificationKeys.code(VerificationChannel.EMAIL, EMAIL));
+        Long attemptTtl = redisTemplate.getExpire(VerificationKeys.attempt(VerificationChannel.EMAIL, EMAIL));
         assertThat(attemptTtl).isPositive().isLessThanOrEqualTo(codeTtl);
     }
 
@@ -165,8 +165,8 @@ class VerificationCodeServiceTest extends RedisContainerSupport {
 
         // then
         assertThat(exceeded).isEqualTo(BaseCode.VERIFICATION_DAILY_LIMIT_EXCEEDED.name());
-        assertThat(redisTemplate.opsForValue().get("email:daily:{" + EMAIL + "}")).isEqualTo("3");
-        assertThat(redisTemplate.getExpire("email:daily:{" + EMAIL + "}")).isPositive();
+        assertThat(redisTemplate.opsForValue().get(VerificationKeys.dailySend(VerificationChannel.EMAIL, EMAIL))).isEqualTo("3");
+        assertThat(redisTemplate.getExpire(VerificationKeys.dailySend(VerificationChannel.EMAIL, EMAIL))).isPositive();
     }
 
     @Test
@@ -176,6 +176,88 @@ class VerificationCodeServiceTest extends RedisContainerSupport {
 
         // when & then
         assertThat(attemptReserve(verificationCodeService, "other@snac.com")).isEqualTo(SUCCESS);
+    }
+
+    @Test
+    void 발행_실패로_예약을_되돌리면_바로_다시_요청할_수_있고_일일_횟수도_복구된다() {
+        // given
+        verificationCodeService.reserveSend(VerificationChannel.EMAIL, EMAIL);
+
+        // when
+        verificationCodeService.releaseSend(VerificationChannel.EMAIL, EMAIL);
+
+        // then
+        assertThat(redisTemplate.opsForValue().get(VerificationKeys.dailySend(VerificationChannel.EMAIL, EMAIL))).isEqualTo("0");
+        assertThat(attemptReserve(verificationCodeService, EMAIL)).isEqualTo(SUCCESS);
+    }
+
+    @Test
+    void 집계_키가_없을_때_예약을_되돌려도_횟수가_음수가_되지_않는다() {
+        // when
+        verificationCodeService.releaseSend(VerificationChannel.EMAIL, EMAIL);
+
+        // then
+        assertThat(redisTemplate.hasKey(VerificationKeys.dailySend(VerificationChannel.EMAIL, EMAIL))).isFalse();
+    }
+
+    @Test
+    void 대소문자만_다른_이메일로는_발송_한도를_우회할_수_없다() {
+        // given
+        verificationCodeService.reserveSend(VerificationChannel.EMAIL, "user@snac.com");
+
+        // when & then
+        assertThat(attemptReserve(verificationCodeService, "user@SNAC.COM")).isEqualTo(BaseCode.VERIFICATION_RESEND_TOO_EARLY.name());
+        assertThat(attemptReserve(verificationCodeService, "USER@snac.com")).isEqualTo(BaseCode.VERIFICATION_RESEND_TOO_EARLY.name());
+    }
+
+    @Test
+    void 이메일_도메인_대소문자가_달라도_같은_대상으로_검증된다() {
+        // given
+        String code = verificationCodeService.generateAndStoreCode(VerificationChannel.EMAIL, "user@SNAC.com").code();
+
+        // when
+        verificationCodeService.verifyCode(VerificationChannel.EMAIL, "user@snac.com", code);
+
+        // then
+        assertThat(verificationCodeService.isVerified(VerificationChannel.EMAIL, "user@Snac.Com")).isTrue();
+    }
+
+    @Test
+    void 국제_형식과_국내_형식_휴대폰_번호는_같은_대상으로_처리된다() {
+        // given
+        String code = verificationCodeService.generateAndStoreCode(VerificationChannel.SMS, "+821012345678").code();
+
+        // when
+        verificationCodeService.verifyCode(VerificationChannel.SMS, "01012345678", code);
+
+        // then
+        assertThat(verificationCodeService.isVerified(VerificationChannel.SMS, "+821012345678")).isTrue();
+    }
+
+    @Test
+    void 같은_대상의_키는_같은_해시태그를_쓰고_키_이름에_대상_값이_노출되지_않는다() {
+        // given : 해시태그를 깨뜨릴 수 있는 문자가 섞인 주소
+        String target = "}weird{@snac.com";
+
+        // when
+        String codeKey = VerificationKeys.code(VerificationChannel.EMAIL, target);
+        String attemptKey = VerificationKeys.attempt(VerificationChannel.EMAIL, target);
+        String cooldownKey = VerificationKeys.cooldown(VerificationChannel.EMAIL, target);
+        String dailyKey = VerificationKeys.dailySend(VerificationChannel.EMAIL, target);
+
+        // then
+        assertThat(hashTagOf(codeKey)).isNotBlank().isEqualTo(hashTagOf(attemptKey));
+        assertThat(hashTagOf(cooldownKey)).isNotBlank().isEqualTo(hashTagOf(dailyKey));
+        assertThat(codeKey).doesNotContain("snac.com");
+        String code = verificationCodeService.generateAndStoreCode(VerificationChannel.EMAIL, target).code();
+        assertThat(attemptVerify(target, code)).isEqualTo(SUCCESS);
+    }
+
+    // Redis Cluster 규칙: 첫 '{' 와 그 뒤 첫 '}' 사이 문자열이 슬롯 계산에 쓰인다.
+    private static String hashTagOf(String key) {
+        int open = key.indexOf('{');
+        int close = key.indexOf('}', open + 1);
+        return key.substring(open + 1, close);
     }
 
     private String attemptVerify(String target, String code) {

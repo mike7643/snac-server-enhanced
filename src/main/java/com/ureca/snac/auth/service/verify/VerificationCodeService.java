@@ -34,6 +34,7 @@ public class VerificationCodeService {
     private static final DefaultRedisScript<Long> ISSUE_CODE_SCRIPT = createIssueCodeScript();
     private static final DefaultRedisScript<Long> CONSUME_CODE_SCRIPT = createConsumeCodeScript();
     private static final DefaultRedisScript<Long> RESERVE_SEND_SCRIPT = createReserveSendScript();
+    private static final DefaultRedisScript<Long> RELEASE_SEND_SCRIPT = createReleaseSendScript();
 
     private final StringRedisTemplate redisTemplate;
     private final Map<VerificationChannel, VerificationPolicy> policies;
@@ -57,7 +58,7 @@ public class VerificationCodeService {
         VerificationPolicy policy = getPolicy(channel);
         Long result = executeScript(
                 RESERVE_SEND_SCRIPT,
-                List.of(cooldownKey(channel, target), dailySendKey(channel, target)),
+                List.of(VerificationKeys.cooldown(channel, target), VerificationKeys.dailySend(channel, target)),
                 String.valueOf(toPositiveMillis(policy.resendCooldown())),
                 String.valueOf(policy.dailySendLimit()),
                 String.valueOf(DAILY_SEND_WINDOW.toMillis())
@@ -74,6 +75,17 @@ public class VerificationCodeService {
         }
     }
 
+    /**
+     * 예약 후 메시지 발행에 실패했을 때 예약을 되돌린다.
+     * 재발송 대기를 풀고 일일 발송 횟수를 1 줄인다. (집계 키가 이미 만료되었으면 아무것도 하지 않는다)
+     */
+    public void releaseSend(VerificationChannel channel, String target) {
+        executeScript(
+                RELEASE_SEND_SCRIPT,
+                List.of(VerificationKeys.cooldown(channel, target), VerificationKeys.dailySend(channel, target))
+        );
+    }
+
     public IssuedVerificationCode generateAndStoreCode(VerificationChannel channel, String target) {
         // 채널별 정책(TTL)과 채널별 생성 전략(OTP/링크 토큰 등)을 조합해서 저장한다.
         // 새 코드를 발급하면 이전 코드에 누적된 실패 횟수도 함께 초기화한다.
@@ -81,7 +93,7 @@ public class VerificationCodeService {
         String code = getTokenGenerator(channel).generate();
         executeScript(
                 ISSUE_CODE_SCRIPT,
-                List.of(codeKey(channel, target), attemptKey(channel, target)),
+                List.of(VerificationKeys.code(channel, target), VerificationKeys.attempt(channel, target)),
                 code,
                 String.valueOf(toPositiveMillis(policy.codeTtl()))
         );
@@ -93,7 +105,7 @@ public class VerificationCodeService {
         // 스크립트 반환값: -2(시도 초과로 코드 폐기), -1(없음), 0(불일치), 1(일치+verified 상태 전이 완료)
         Long result = executeScript(
                 CONSUME_CODE_SCRIPT,
-                List.of(codeKey(channel, target), attemptKey(channel, target)),
+                List.of(VerificationKeys.code(channel, target), VerificationKeys.attempt(channel, target)),
                 inputCode,
                 VERIFIED_MARKER,
                 String.valueOf(toPositiveMillis(policy.verifiedFlagTtl())),
@@ -119,7 +131,7 @@ public class VerificationCodeService {
 
     public boolean isVerified(VerificationChannel channel, String target) {
         // 코드 키가 VERIFIED 마커 상태이면 검증 완료로 본다.
-        String value = redisTemplate.opsForValue().get(codeKey(channel, target));
+        String value = redisTemplate.opsForValue().get(VerificationKeys.code(channel, target));
         return VERIFIED_MARKER.equals(value);
     }
 
@@ -134,23 +146,6 @@ public class VerificationCodeService {
             throw new InternalServerException(BaseCode.VERIFICATION_INTERNAL_ERROR);
         }
         return result;
-    }
-
-    // 같은 대상의 키들은 해시태그({target})로 묶어 Redis Cluster 환경에서도 한 슬롯에서 스크립트가 실행되도록 한다.
-    private String codeKey(VerificationChannel channel, String target) {
-        return channel.keyPrefix() + ":code:{" + target + "}";
-    }
-
-    private String attemptKey(VerificationChannel channel, String target) {
-        return channel.keyPrefix() + ":attempt:{" + target + "}";
-    }
-
-    private String cooldownKey(VerificationChannel channel, String target) {
-        return channel.keyPrefix() + ":cooldown:{" + target + "}";
-    }
-
-    private String dailySendKey(VerificationChannel channel, String target) {
-        return channel.keyPrefix() + ":daily:{" + target + "}";
     }
 
     private static long toPositiveMillis(Duration duration) {
@@ -219,6 +214,16 @@ public class VerificationCodeService {
                         + "sent = redis.call('INCR', KEYS[2])\n"
                         + "if sent == 1 then redis.call('PEXPIRE', KEYS[2], ARGV[3]) end\n"
                         + "redis.call('SET', KEYS[1], '1', 'PX', ARGV[1])\n"
+                        + "return 1"
+        );
+    }
+
+    private static DefaultRedisScript<Long> createReleaseSendScript() {
+        // KEYS[1]=재발송 대기, KEYS[2]=일일 발송 횟수
+        return script(
+                "redis.call('DEL', KEYS[1])\n"
+                        + "local sent = tonumber(redis.call('GET', KEYS[2]) or '0')\n"
+                        + "if sent > 0 then redis.call('DECR', KEYS[2]) end\n"
                         + "return 1"
         );
     }
